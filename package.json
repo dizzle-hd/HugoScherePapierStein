@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Schere, Stein, Papier mit Benutzerkonten (Registrierung/Login)",
   "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.js"
   },
