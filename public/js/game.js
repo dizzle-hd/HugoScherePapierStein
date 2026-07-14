@@ -1,6 +1,8 @@
 const ICONS = { stein: '🪨', papier: '📄', schere: '✂️' };
+const ROLE_BADGES = { Owner: '👑 Owner', Sponsor: '💎 Sponsor', Famous: '⭐ Famous' };
 
 const usernameEl = document.getElementById('current-username');
+const roleBadgeEl = document.getElementById('role-badge');
 const statWins = document.getElementById('stat-wins');
 const statDraws = document.getElementById('stat-draws');
 const statLosses = document.getElementById('stat-losses');
@@ -63,6 +65,9 @@ const hostedChoicesSection = document.getElementById('hosted-choices');
 const hostedChoiceButtons = document.querySelectorAll('.hosted-choice-btn');
 const hostedCloseBtn = document.getElementById('hosted-close-btn');
 const hostedBackBtn = document.getElementById('hosted-back-btn');
+const hostedPendingPanel = document.getElementById('hosted-pending-panel');
+const pendingSearchInput = document.getElementById('pending-search');
+const pendingList = document.getElementById('pending-list');
 
 const ALL_PANELS = [modeSelect, waitingPanel, gameSection, joinCodePanel, hostSetupPanel, hostedMatchSection];
 
@@ -143,6 +148,11 @@ async function loadMe() {
   amIGuest = Boolean(data.isGuest);
   usernameEl.textContent = data.username;
   renderStats(data.stats);
+
+  if (data.role) {
+    roleBadgeEl.textContent = ROLE_BADGES[data.role] || data.role;
+    roleBadgeEl.classList.remove('hidden');
+  }
 
   if (amIGuest) {
     document.querySelector('.stats').classList.add('hidden');
@@ -292,6 +302,11 @@ function handleWsMessage(msg) {
 
   if (msg.type === 'hosted_closed') {
     handleHostedClosed(msg);
+    return;
+  }
+
+  if (msg.type === 'hosted_rejected') {
+    handleHostedRejected(msg);
     return;
   }
 }
@@ -450,6 +465,10 @@ function renderHostedButtons(state) {
 
 function renderHostedStatusLine(state) {
   if (state.abortedBy) return;
+  if (state.role === 'pending') {
+    hostedStatusText.textContent = 'Warte auf Bestätigung durch den Host…';
+    return;
+  }
   if (state.status === 'waiting') {
     hostedStatusText.textContent = `Warte auf Spieler… (${state.players.length}/2 beigetreten)`;
     return;
@@ -460,6 +479,53 @@ function renderHostedStatusLine(state) {
     return;
   }
   hostedStatusText.textContent = '';
+}
+
+function renderHostedPendingList(state) {
+  const isHost = state.role === 'host';
+  hostedPendingPanel.classList.toggle('hidden', !isHost);
+  if (!isHost) return;
+
+  const query = pendingSearchInput.value.trim().toLowerCase();
+  const filtered = state.pending.filter((p) => p.name.toLowerCase().includes(query));
+
+  pendingList.textContent = '';
+  if (filtered.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'pending-empty';
+    empty.textContent = state.pending.length === 0 ? 'Keine offenen Beitrittsanfragen.' : 'Keine Treffer.';
+    pendingList.appendChild(empty);
+    return;
+  }
+
+  filtered.forEach((p) => {
+    const row = document.createElement('div');
+    row.className = 'pending-row';
+
+    const nameEl = document.createElement('span');
+    nameEl.textContent = p.name;
+
+    const acceptBtn = document.createElement('button');
+    acceptBtn.type = 'button';
+    acceptBtn.className = 'pending-accept-btn';
+    acceptBtn.textContent = '✓ Annehmen';
+    acceptBtn.addEventListener('click', () => {
+      wsSend({ type: 'approve_hosted_join', matchId: hostedMatchId, guestId: p.id });
+    });
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.type = 'button';
+    rejectBtn.className = 'pending-reject-btn';
+    rejectBtn.textContent = '✗ Ablehnen';
+    rejectBtn.addEventListener('click', () => {
+      wsSend({ type: 'reject_hosted_join', matchId: hostedMatchId, guestId: p.id });
+    });
+
+    row.appendChild(nameEl);
+    row.appendChild(acceptBtn);
+    row.appendChild(rejectBtn);
+    pendingList.appendChild(row);
+  });
 }
 
 function renderHostedHandsPreReveal(state) {
@@ -543,6 +609,7 @@ async function runHostedCountdown(state) {
   renderHostedLabels(finalState);
   renderHostedButtons(finalState);
   renderHostedStatusLine(finalState);
+  renderHostedPendingList(finalState);
 
   if (finalState.abortedBy) {
     renderHostedFinal(finalState);
@@ -585,6 +652,7 @@ function onHostedState(state) {
   renderHostedLabels(state);
   renderHostedButtons(state);
   renderHostedStatusLine(state);
+  renderHostedPendingList(state);
 
   if (state.abortedBy) {
     renderHostedFinal(state);
@@ -624,6 +692,19 @@ function handleHostedClosed(msg) {
     hostedState = null;
     backToStart();
   }, 2000);
+}
+
+function handleHostedRejected(msg) {
+  if (hostedMatchId !== msg.matchId) return;
+  hostedChoicesSection.classList.add('hidden');
+  hostedResultText.textContent = 'Der Host hat deine Beitrittsanfrage abgelehnt.';
+  hostedResultText.className = 'result lose';
+  hostedStatusText.textContent = '';
+  setTimeout(() => {
+    hostedMatchId = null;
+    hostedState = null;
+    backToStart();
+  }, 2500);
 }
 
 function attemptAutoJoin(code) {
@@ -842,6 +923,10 @@ hostedCloseBtn.addEventListener('click', () => {
   if (hostedMatchId) {
     wsSend({ type: 'close_hosted_match', matchId: hostedMatchId });
   }
+});
+
+pendingSearchInput.addEventListener('input', () => {
+  if (hostedState) renderHostedPendingList(hostedState);
 });
 
 document.getElementById('logout-btn').addEventListener('click', async () => {

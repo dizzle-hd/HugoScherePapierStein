@@ -16,7 +16,10 @@ const CHOICES = ['stein', 'papier', 'schere'];
 const BEATS = { stein: 'schere', schere: 'papier', papier: 'stein' };
 const SESSION_SECRET = process.env.SESSION_SECRET || 'schere-stein-papier-secret';
 const sessionStore = new session.MemoryStore();
-const ADMIN_USERNAMES = ['axxin', 'drpacket', 'hugo'];
+// Every admin holds exactly one role. All roles currently share the same
+// hosting/approval permissions — the roles are labels for now, distinguishing
+// them is a foundation for permission differences to be added later.
+const ROLES = { drpacket: 'Owner', axxin: 'Sponsor', hugo: 'Famous' };
 
 // Fixed accounts – the only accounts that can ever log in. There is no public
 // registration; passwords are seeded below (bcrypt hashes, not plaintext).
@@ -26,8 +29,12 @@ const ADMIN_SEED = {
   hugo: { username: 'Hugo', passwordHash: '$2a$10$WLh6ifSEE63ectH9dznXpefNYQRMYG.epfT/t4sCjSiH3GhBc0DY2' }
 };
 
+function roleOf(username) {
+  return ROLES[username] || null;
+}
+
 function isAdmin(username) {
-  return ADMIN_USERNAMES.includes(username);
+  return Boolean(ROLES[username]);
 }
 
 function loadUsers() {
@@ -116,7 +123,7 @@ app.post('/api/login', (req, res) => {
 
   req.session.username = key;
   req.session.isGuest = false;
-  res.json({ id: key, username: user.username, stats: user.stats, isAdmin: isAdmin(key), isGuest: false });
+  res.json({ id: key, username: user.username, stats: user.stats, isAdmin: isAdmin(key), role: roleOf(key), isGuest: false });
 });
 
 app.post('/api/guest-join', (req, res) => {
@@ -153,14 +160,14 @@ app.post('/api/logout', (req, res) => {
 app.get('/api/me', requireAuth, (req, res) => {
   const identity = req.session.username;
   if (req.session.isGuest) {
-    return res.json({ id: identity, username: displayNameOf(identity), stats: null, isAdmin: false, isGuest: true });
+    return res.json({ id: identity, username: displayNameOf(identity), stats: null, isAdmin: false, role: null, isGuest: true });
   }
   const users = loadUsers();
   const user = users[identity];
   if (!user) {
     return res.status(401).json({ error: 'Nicht angemeldet.' });
   }
-  res.json({ id: identity, username: user.username, stats: user.stats, isAdmin: isAdmin(identity), isGuest: false });
+  res.json({ id: identity, username: user.username, stats: user.stats, isAdmin: isAdmin(identity), role: roleOf(identity), isGuest: false });
 });
 
 app.post('/api/play', requireAuth, (req, res) => {
@@ -270,11 +277,18 @@ function sanitizeStake(stake) {
 }
 
 function hostedRecipients(match) {
-  return new Set([match.host, ...match.players, ...match.spectators]);
+  return new Set([match.host, ...match.players, ...match.spectators, ...match.pending]);
+}
+
+function playerRoleFor(match, identity) {
+  if (identity === match.host) return 'host';
+  if (match.players.includes(identity)) return 'player';
+  if (match.pending.includes(identity)) return 'pending';
+  return 'spectator';
 }
 
 function buildHostedStatePayload(match, identity) {
-  const role = identity === match.host ? 'host' : (match.players.includes(identity) ? 'player' : 'spectator');
+  const role = playerRoleFor(match, identity);
   return {
     type: 'hosted_state',
     matchId: match.code,
@@ -290,6 +304,7 @@ function buildHostedStatePayload(match, identity) {
       score: match.scores[p],
       locked: Boolean(match.choices[p])
     })),
+    pending: role === 'host' ? match.pending.map((p) => ({ id: p, name: displayNameOf(p) })) : [],
     lastRound: match.lastRound,
     winner: match.winner,
     abortedBy: match.abortedBy || null
@@ -417,6 +432,7 @@ function handleMessage(identity, raw) {
       targetScore,
       stake: sanitizeStake(msg.stake),
       players: [],
+      pending: [],
       scores: {},
       choices: {},
       status: 'waiting',
@@ -438,18 +454,57 @@ function handleMessage(identity, raw) {
       return;
     }
 
-    if (identity !== match.host && !match.players.includes(identity)) {
-      if (match.players.length < 2 && match.status !== 'finished') {
-        match.players.push(identity);
-        match.scores[identity] = 0;
-        if (match.players.length === 2) {
-          match.status = 'ready';
+    const alreadyInMatch = identity === match.host || match.players.includes(identity) ||
+      match.pending.includes(identity) || match.spectators.has(identity);
+
+    if (!alreadyInMatch) {
+      const openSlots = 2 - match.players.length - match.pending.length;
+      if (openSlots > 0 && match.status !== 'finished') {
+        if (isGuestIdentity(identity)) {
+          // Guests must be approved by the host first so nobody can join
+          // under a name that isn't theirs.
+          match.pending.push(identity);
+        } else {
+          match.players.push(identity);
+          match.scores[identity] = 0;
+          if (match.players.length === 2) {
+            match.status = 'ready';
+          }
         }
       } else {
         match.spectators.add(identity);
       }
     }
 
+    broadcastHostedState(match);
+    return;
+  }
+
+  if (msg.type === 'approve_hosted_join') {
+    const match = hostedMatches.get(msg.matchId);
+    if (!match || match.host !== identity) return;
+    const guestId = msg.guestId;
+    if (!match.pending.includes(guestId)) return;
+    if (match.players.length >= 2) return;
+
+    match.pending = match.pending.filter((p) => p !== guestId);
+    match.players.push(guestId);
+    match.scores[guestId] = 0;
+    if (match.players.length === 2) {
+      match.status = 'ready';
+    }
+    broadcastHostedState(match);
+    return;
+  }
+
+  if (msg.type === 'reject_hosted_join') {
+    const match = hostedMatches.get(msg.matchId);
+    if (!match || match.host !== identity) return;
+    const guestId = msg.guestId;
+    if (!match.pending.includes(guestId)) return;
+
+    match.pending = match.pending.filter((p) => p !== guestId);
+    send(guestId, { type: 'hosted_rejected', matchId: match.code });
     broadcastHostedState(match);
     return;
   }
@@ -511,6 +566,9 @@ function handleMessage(identity, raw) {
     if (!match) return;
     if (match.players.includes(identity)) {
       forfeitHostedMatch(match, identity);
+    } else if (match.pending.includes(identity)) {
+      match.pending = match.pending.filter((p) => p !== identity);
+      broadcastHostedState(match);
     } else {
       match.spectators.delete(identity);
     }
@@ -542,6 +600,9 @@ function handleDisconnect(identity) {
   for (const match of hostedMatches.values()) {
     if (match.players.includes(identity)) {
       forfeitHostedMatch(match, identity);
+    } else if (match.pending.includes(identity)) {
+      match.pending = match.pending.filter((p) => p !== identity);
+      broadcastHostedState(match);
     } else {
       match.spectators.delete(identity);
     }

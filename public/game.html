@@ -10,7 +10,7 @@
 <body>
   <main class="game-page">
     <header class="topbar">
-      <span>Angemeldet als <strong id="current-username">…</strong></span>
+      <span>Angemeldet als <strong id="current-username">…</strong> <span id="role-badge" class="role-badge hidden"></span></span>
       <button id="logout-btn" class="link-btn">Abmelden</button>
     </header>
 
@@ -118,6 +118,12 @@
       <div id="hosted-code-banner" class="hosted-code-banner hidden">
         <span>Code: <strong id="hosted-code-display"></strong></span>
         <button id="copy-join-link-btn" type="button" class="link-btn">Link kopieren</button>
+      </div>
+
+      <div id="hosted-pending-panel" class="hosted-pending-panel hidden">
+        <h3>Beitrittsanfragen</h3>
+        <input type="text" id="pending-search" placeholder="Name suchen…" autocomplete="off" />
+        <div id="pending-list" class="pending-list"></div>
       </div>
 
       <div id="hosted-stake-banner" class="stake-banner"></div>
