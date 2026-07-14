@@ -76,9 +76,10 @@ function applyResult(user, result) {
   else user.stats.draws += 1;
 }
 
-// Guests have no account: they join a hosted match with just a display name.
-// Their session "username" is an opaque internal id; the real-world name they
-// typed is only ever kept here, in memory, for as long as their session lives.
+// Guests have no account: they join a hosted match/tournament with just a
+// display name. Their session "username" is an opaque internal id; the
+// real-world name they typed is only ever kept here, in memory, for as long
+// as their session lives.
 const guestNames = new Map();
 
 function isGuestIdentity(identity) {
@@ -135,7 +136,7 @@ app.post('/api/guest-join', (req, res) => {
   if (!/^[A-Z0-9]{6}$/.test(normalizedCode)) {
     return res.status(400).json({ error: 'Bitte einen gültigen 6-stelligen Code angeben.' });
   }
-  if (!hostedMatches.has(normalizedCode)) {
+  if (!hostedMatches.has(normalizedCode) && !tournaments.has(normalizedCode)) {
     return res.status(404).json({ error: 'Code nicht gefunden.' });
   }
 
@@ -198,9 +199,6 @@ const wss = new WebSocketServer({ noServer: true });
 
 // key: identity (account key or guest id) -> the single active socket for that identity
 const sockets = new Map();
-let queue = []; // identities waiting for an opponent
-const matches = new Map(); // matchId -> { players: [identity, identity], choices: {} }
-let nextMatchId = 1;
 
 function send(identity, payload) {
   const ws = sockets.get(identity);
@@ -209,42 +207,24 @@ function send(identity, payload) {
   }
 }
 
-function removeFromQueue(identity) {
-  queue = queue.filter((u) => u !== identity);
+function opponentOf(entity, identity) {
+  return entity.players.find((u) => u !== identity);
 }
 
-function opponentOf(match, identity) {
-  return match.players.find((u) => u !== identity);
-}
-
-function endMatch(matchId) {
-  matches.delete(matchId);
-}
-
-function tryMatchmake() {
-  while (queue.length >= 2) {
-    const a = queue.shift();
-    const b = queue.shift();
-    const matchId = String(nextMatchId++);
-    matches.set(matchId, { players: [a, b], choices: {} });
-    send(a, { type: 'match_found', matchId, opponent: displayNameOf(b) });
-    send(b, { type: 'match_found', matchId, opponent: displayNameOf(a) });
-  }
-}
-
-/* ---------------- Hosted matches (admin-run, code to join, stakes) ---------------- */
+/* ---------------- Shared: codes, stakes ---------------- */
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
 const hostedMatches = new Map(); // code -> hosted match state
+const tournaments = new Map(); // code -> tournament state
 
-function generateHostedCode() {
+function generateCode() {
   let code;
   do {
     code = '';
     for (let i = 0; i < 6; i++) {
       code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
     }
-  } while (hostedMatches.has(code));
+  } while (hostedMatches.has(code) || tournaments.has(code));
   return code;
 }
 
@@ -276,14 +256,16 @@ function sanitizeStake(stake) {
   };
 }
 
+/* ---------------- Hosted matches (admin-run, code to join, single stake) ---------------- */
+
 function hostedRecipients(match) {
   return new Set([match.host, ...match.players, ...match.spectators, ...match.pending]);
 }
 
-function playerRoleFor(match, identity) {
-  if (identity === match.host) return 'host';
-  if (match.players.includes(identity)) return 'player';
-  if (match.pending.includes(identity)) return 'pending';
+function playerRoleFor(entity, identity) {
+  if (identity === entity.host) return 'host';
+  if (entity.players.includes(identity)) return 'player';
+  if (entity.pending.includes(identity)) return 'pending';
   return 'spectator';
 }
 
@@ -327,86 +309,262 @@ function forfeitHostedMatch(match, leavingIdentity) {
   broadcastHostedState(match);
 }
 
+/* ---------------- Tournaments (admin-run, code to join, bracket, prizes) ---------------- */
+
+function isValidPrizes(prizes) {
+  if (!prizes || typeof prizes !== 'object') return false;
+  if (!isValidStake(prizes.first)) return false;
+  if (prizes.second != null && !isValidStake(prizes.second)) return false;
+  if (prizes.third != null && !isValidStake(prizes.third)) return false;
+  return true;
+}
+
+function sanitizePrizes(prizes) {
+  return {
+    first: sanitizeStake(prizes.first),
+    second: prizes.second ? sanitizeStake(prizes.second) : null,
+    third: prizes.third ? sanitizeStake(prizes.third) : null
+  };
+}
+
+function tournamentRecipients(tournament) {
+  return new Set([tournament.host, ...tournament.players, ...tournament.spectators, ...tournament.pending]);
+}
+
+function makeMatchup(round, index, a, b) {
+  const matchup = {
+    id: `r${round}m${index}`,
+    round,
+    players: [a, b],
+    scores: {},
+    choices: {},
+    status: (a && b) ? 'ready' : 'bye',
+    lastRound: null,
+    winner: null
+  };
+  if (a) matchup.scores[a] = 0;
+  if (b) matchup.scores[b] = 0;
+  if (matchup.status === 'bye') matchup.winner = a || b || null;
+  return matchup;
+}
+
+function allMatchupsOf(tournament) {
+  const list = tournament.bracket ? tournament.bracket.rounds.flat() : [];
+  if (tournament.thirdPlaceMatchup) list.push(tournament.thirdPlaceMatchup);
+  return list;
+}
+
+function findMatchup(tournament, matchupId) {
+  return allMatchupsOf(tournament).find((m) => m.id === matchupId) || null;
+}
+
+function findActiveMatchupFor(tournament, identity) {
+  return allMatchupsOf(tournament).find((m) =>
+    m.players.includes(identity) && (m.status === 'ready' || m.status === 'countdown')
+  ) || null;
+}
+
+// The most recent matchup this player is/was part of, regardless of status —
+// unlike findActiveMatchupFor, this stays populated right after a matchup
+// finishes so the client can still render that matchup's reveal/result
+// before (maybe) moving on to a new one next round.
+function findMyMatchup(tournament, identity) {
+  const theirs = allMatchupsOf(tournament).filter((m) => m.players.includes(identity));
+  return theirs.length ? theirs[theirs.length - 1] : null;
+}
+
+function isEliminated(tournament, identity) {
+  if (tournament.status === 'registration') return false;
+  const theirs = allMatchupsOf(tournament).filter((m) => m.players.includes(identity));
+  if (theirs.length === 0) return false;
+  const last = theirs[theirs.length - 1];
+  if (last.status !== 'finished' && last.status !== 'bye') return false;
+  return last.winner !== identity;
+}
+
+function buildBracket(tournament) {
+  const shuffled = [...tournament.players];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const size = Math.max(2, Math.pow(2, Math.ceil(Math.log2(shuffled.length))));
+  const byeCount = size - shuffled.length;
+  // Give each bye its own matchup (paired with null) instead of padding the
+  // list with nulls at the end, which could pair two byes against each other.
+  const byePlayers = shuffled.slice(0, byeCount);
+  const activePlayers = shuffled.slice(byeCount);
+
+  const round0 = [];
+  for (const p of byePlayers) {
+    round0.push(makeMatchup(0, round0.length, p, null));
+  }
+  for (let i = 0; i < activePlayers.length; i += 2) {
+    round0.push(makeMatchup(0, round0.length, activePlayers[i], activePlayers[i + 1]));
+  }
+  tournament.bracket = { rounds: [round0] };
+}
+
+function checkTournamentCompletion(tournament) {
+  const rounds = tournament.bracket.rounds;
+  const lastRound = rounds[rounds.length - 1];
+  const mainDone = lastRound.length === 1 && (lastRound[0].status === 'finished' || lastRound[0].status === 'bye');
+  if (!mainDone) return;
+
+  const thirdDone = !tournament.prizes.third || !tournament.thirdPlaceMatchup ||
+    tournament.thirdPlaceMatchup.status === 'finished' || tournament.thirdPlaceMatchup.status === 'bye';
+  if (!thirdDone) return;
+
+  const finalMatch = lastRound[0];
+  tournament.standings.first = finalMatch.winner;
+  tournament.standings.second = finalMatch.players.find((p) => p && p !== finalMatch.winner) || null;
+  if (tournament.thirdPlaceMatchup) {
+    tournament.standings.third = tournament.thirdPlaceMatchup.winner;
+  }
+  tournament.status = 'finished';
+}
+
+function advanceTournament(tournament) {
+  const round = tournament.bracket.rounds[tournament.bracket.rounds.length - 1];
+  if (!round.every((m) => m.status === 'finished' || m.status === 'bye')) return;
+
+  if (round.length === 2 && tournament.prizes.third && !tournament.thirdPlaceMatchup) {
+    const losers = round
+      .map((m) => m.players.find((p) => p && p !== m.winner))
+      .filter(Boolean);
+    if (losers.length === 2) {
+      tournament.thirdPlaceMatchup = makeMatchup(-1, 0, losers[0], losers[1]);
+    }
+  }
+
+  const winners = round.map((m) => m.winner).filter(Boolean);
+  if (winners.length > 1) {
+    const nextRoundIndex = tournament.bracket.rounds.length;
+    const nextRound = [];
+    for (let i = 0; i < winners.length; i += 2) {
+      nextRound.push(makeMatchup(nextRoundIndex, nextRound.length, winners[i], winners[i + 1] ?? null));
+    }
+    tournament.bracket.rounds.push(nextRound);
+  }
+
+  checkTournamentCompletion(tournament);
+}
+
+// How long to keep a just-finished matchup as each player's "myMatchup"
+// before the bracket is advanced to the next round. Without this delay,
+// advanceTournament() can build (and hand out) the next matchup in the very
+// same tick a semifinal resolves, so a client's reveal animation for the
+// finished matchup would never get its own broadcast — players would jump
+// straight into the next matchup without ever seeing "you won this round".
+const TOURNAMENT_ADVANCE_DELAY_MS = 3300;
+
+function resolveMatchupRound(tournament, matchup) {
+  const [a, b] = matchup.players;
+  const choiceA = matchup.choices[a];
+  const choiceB = matchup.choices[b];
+  const resultForA = judge(choiceA, choiceB);
+
+  let roundWinner = null;
+  if (resultForA === 'gewonnen') roundWinner = a;
+  else if (resultForA === 'verloren') roundWinner = b;
+
+  if (roundWinner) matchup.scores[roundWinner] += 1;
+
+  matchup.lastRound = { choices: { [a]: choiceA, [b]: choiceB }, winner: roundWinner };
+  matchup.choices = {};
+
+  if (roundWinner && matchup.scores[roundWinner] >= tournament.targetScore) {
+    matchup.status = 'finished';
+    matchup.winner = roundWinner;
+    setTimeout(() => {
+      if (matchup === tournament.thirdPlaceMatchup) {
+        checkTournamentCompletion(tournament);
+      } else {
+        advanceTournament(tournament);
+      }
+      broadcastTournamentState(tournament);
+    }, TOURNAMENT_ADVANCE_DELAY_MS);
+  } else {
+    matchup.status = 'ready';
+  }
+}
+
+function forfeitTournamentMatchup(tournament, identity) {
+  const matchup = findActiveMatchupFor(tournament, identity);
+  if (!matchup) return;
+  const remaining = matchup.players.find((p) => p && p !== identity);
+  matchup.status = 'finished';
+  matchup.winner = remaining || null;
+  matchup.choices = {};
+  setTimeout(() => {
+    if (matchup === tournament.thirdPlaceMatchup) {
+      checkTournamentCompletion(tournament);
+    } else {
+      advanceTournament(tournament);
+    }
+    broadcastTournamentState(tournament);
+  }, TOURNAMENT_ADVANCE_DELAY_MS);
+}
+
+function serializeMatchup(m) {
+  return {
+    id: m.id,
+    round: m.round,
+    players: m.players.map((p) => (p ? { id: p, name: displayNameOf(p), score: m.scores[p] ?? 0, locked: Boolean(m.choices[p]) } : null)),
+    status: m.status,
+    lastRound: m.lastRound,
+    winner: m.winner
+  };
+}
+
+function serializeStandings(tournament) {
+  const wrap = (id) => (id ? { id, name: displayNameOf(id) } : null);
+  return {
+    first: wrap(tournament.standings.first),
+    second: wrap(tournament.standings.second),
+    third: wrap(tournament.standings.third)
+  };
+}
+
+function buildTournamentStatePayload(tournament, identity) {
+  const role = playerRoleFor(tournament, identity);
+  const myMatchup = role === 'player' ? findMyMatchup(tournament, identity) : null;
+
+  return {
+    type: 'tournament_state',
+    code: tournament.code,
+    status: tournament.status,
+    targetScore: tournament.targetScore,
+    prizes: tournament.prizes,
+    role,
+    players: tournament.players.map((p) => ({
+      id: p,
+      name: displayNameOf(p),
+      eliminated: isEliminated(tournament, p)
+    })),
+    pending: role === 'host' ? tournament.pending.map((p) => ({ id: p, name: displayNameOf(p) })) : [],
+    bracket: tournament.bracket ? {
+      rounds: tournament.bracket.rounds.map((round) => round.map(serializeMatchup)),
+      thirdPlaceMatchup: tournament.thirdPlaceMatchup ? serializeMatchup(tournament.thirdPlaceMatchup) : null
+    } : null,
+    standings: tournament.status === 'finished' ? serializeStandings(tournament) : null,
+    myMatchup: myMatchup ? serializeMatchup(myMatchup) : null
+  };
+}
+
+function broadcastTournamentState(tournament) {
+  for (const identity of tournamentRecipients(tournament)) {
+    send(identity, buildTournamentStatePayload(tournament, identity));
+  }
+}
+
+/* ---------------- WS message handling ---------------- */
+
 function handleMessage(identity, raw) {
   let msg;
   try {
     msg = JSON.parse(raw);
   } catch {
-    return;
-  }
-
-  if (msg.type === 'join_queue') {
-    if (isGuestIdentity(identity)) return;
-    if (queue.includes(identity)) return;
-    for (const match of matches.values()) {
-      if (match.players.includes(identity)) return;
-    }
-    queue.push(identity);
-    send(identity, { type: 'queue_joined' });
-    tryMatchmake();
-    return;
-  }
-
-  if (msg.type === 'leave_queue') {
-    removeFromQueue(identity);
-    return;
-  }
-
-  if (msg.type === 'choice') {
-    const match = matches.get(msg.matchId);
-    if (!match || !match.players.includes(identity)) return;
-    if (!CHOICES.includes(msg.choice)) return;
-    if (match.choices[identity]) return;
-
-    match.choices[identity] = msg.choice;
-    const opponent = opponentOf(match, identity);
-    send(opponent, { type: 'opponent_locked_in' });
-
-    if (Object.keys(match.choices).length === 2) {
-      send(match.players[0], { type: 'start_countdown', matchId: msg.matchId });
-      send(match.players[1], { type: 'start_countdown', matchId: msg.matchId });
-
-      setTimeout(() => {
-        const current = matches.get(msg.matchId);
-        if (!current) return;
-
-        const users = loadUsers();
-        for (const player of current.players) {
-          const opp = opponentOf(current, player);
-          const myChoice = current.choices[player];
-          const oppChoice = current.choices[opp];
-          const result = judge(myChoice, oppChoice);
-
-          const userRecord = users[player];
-          let stats = null;
-          if (userRecord) {
-            applyResult(userRecord, result);
-            stats = userRecord.stats;
-          }
-
-          send(player, {
-            type: 'reveal',
-            matchId: msg.matchId,
-            yourChoice: myChoice,
-            opponentChoice: oppChoice,
-            opponent: displayNameOf(opp),
-            result,
-            stats
-          });
-        }
-        saveUsers(users);
-        endMatch(msg.matchId);
-      }, 3000);
-    }
-    return;
-  }
-
-  if (msg.type === 'leave_match') {
-    const match = matches.get(msg.matchId);
-    if (!match || !match.players.includes(identity)) return;
-    const opponent = opponentOf(match, identity);
-    send(opponent, { type: 'opponent_left', matchId: msg.matchId });
-    endMatch(msg.matchId);
     return;
   }
 
@@ -425,7 +583,7 @@ function handleMessage(identity, raw) {
       return;
     }
 
-    const code = generateHostedCode();
+    const code = generateCode();
     const match = {
       code,
       host: identity,
@@ -446,66 +604,150 @@ function handleMessage(identity, raw) {
     return;
   }
 
-  if (msg.type === 'join_hosted_match') {
-    const code = typeof msg.code === 'string' ? msg.code.trim().toUpperCase() : '';
-    const match = hostedMatches.get(code);
-    if (!match) {
-      send(identity, { type: 'hosted_error', message: 'Code nicht gefunden.' });
+  if (msg.type === 'create_tournament') {
+    if (!isAdmin(identity)) {
+      send(identity, { type: 'hosted_error', message: 'Nur Admins können ein Turnier erstellen.' });
+      return;
+    }
+    const targetScore = Number(msg.targetScore);
+    if (!Number.isInteger(targetScore) || targetScore < 1 || targetScore > 50) {
+      send(identity, { type: 'hosted_error', message: 'Ungültige Punktzahl (1-50).' });
+      return;
+    }
+    if (!isValidPrizes(msg.prizes)) {
+      send(identity, { type: 'hosted_error', message: 'Ungültige Preise.' });
       return;
     }
 
-    const alreadyInMatch = identity === match.host || match.players.includes(identity) ||
-      match.pending.includes(identity) || match.spectators.has(identity);
+    const code = generateCode();
+    const tournament = {
+      code,
+      host: identity,
+      targetScore,
+      prizes: sanitizePrizes(msg.prizes),
+      players: [],
+      pending: [],
+      spectators: new Set(),
+      status: 'registration',
+      bracket: null,
+      thirdPlaceMatchup: null,
+      standings: { first: null, second: null, third: null }
+    };
+    tournaments.set(code, tournament);
+    broadcastTournamentState(tournament);
+    return;
+  }
 
-    if (!alreadyInMatch) {
-      const openSlots = 2 - match.players.length - match.pending.length;
-      if (openSlots > 0 && match.status !== 'finished') {
-        if (isGuestIdentity(identity)) {
-          // Guests must be approved by the host first so nobody can join
-          // under a name that isn't theirs.
-          match.pending.push(identity);
-        } else {
-          match.players.push(identity);
-          match.scores[identity] = 0;
-          if (match.players.length === 2) {
-            match.status = 'ready';
+  if (msg.type === 'join_hosted_match') {
+    const code = typeof msg.code === 'string' ? msg.code.trim().toUpperCase() : '';
+
+    const match = hostedMatches.get(code);
+    if (match) {
+      const alreadyInMatch = identity === match.host || match.players.includes(identity) ||
+        match.pending.includes(identity) || match.spectators.has(identity);
+
+      if (!alreadyInMatch) {
+        const openSlots = 2 - match.players.length - match.pending.length;
+        if (openSlots > 0 && match.status !== 'finished') {
+          if (isGuestIdentity(identity)) {
+            // Guests must be approved by the host first so nobody can join
+            // under a name that isn't theirs.
+            match.pending.push(identity);
+          } else {
+            match.players.push(identity);
+            match.scores[identity] = 0;
+            if (match.players.length === 2) {
+              match.status = 'ready';
+            }
           }
+        } else {
+          match.spectators.add(identity);
         }
-      } else {
-        match.spectators.add(identity);
       }
+
+      broadcastHostedState(match);
+      return;
     }
 
-    broadcastHostedState(match);
+    const tournament = tournaments.get(code);
+    if (tournament) {
+      const alreadyIn = identity === tournament.host || tournament.players.includes(identity) ||
+        tournament.pending.includes(identity) || tournament.spectators.has(identity);
+
+      if (!alreadyIn) {
+        if (tournament.status === 'registration') {
+          if (isGuestIdentity(identity)) {
+            tournament.pending.push(identity);
+          } else {
+            tournament.players.push(identity);
+          }
+        } else {
+          tournament.spectators.add(identity);
+        }
+      }
+
+      broadcastTournamentState(tournament);
+      return;
+    }
+
+    send(identity, { type: 'hosted_error', message: 'Code nicht gefunden.' });
     return;
   }
 
   if (msg.type === 'approve_hosted_join') {
     const match = hostedMatches.get(msg.matchId);
-    if (!match || match.host !== identity) return;
-    const guestId = msg.guestId;
-    if (!match.pending.includes(guestId)) return;
-    if (match.players.length >= 2) return;
+    if (match) {
+      if (match.host !== identity) return;
+      const guestId = msg.guestId;
+      if (!match.pending.includes(guestId)) return;
+      if (match.players.length >= 2) return;
 
-    match.pending = match.pending.filter((p) => p !== guestId);
-    match.players.push(guestId);
-    match.scores[guestId] = 0;
-    if (match.players.length === 2) {
-      match.status = 'ready';
+      match.pending = match.pending.filter((p) => p !== guestId);
+      match.players.push(guestId);
+      match.scores[guestId] = 0;
+      if (match.players.length === 2) {
+        match.status = 'ready';
+      }
+      broadcastHostedState(match);
+      return;
     }
-    broadcastHostedState(match);
+
+    const tournament = tournaments.get(msg.matchId);
+    if (tournament) {
+      if (tournament.host !== identity) return;
+      const guestId = msg.guestId;
+      if (!tournament.pending.includes(guestId)) return;
+
+      tournament.pending = tournament.pending.filter((p) => p !== guestId);
+      tournament.players.push(guestId);
+      broadcastTournamentState(tournament);
+    }
     return;
   }
 
   if (msg.type === 'reject_hosted_join') {
     const match = hostedMatches.get(msg.matchId);
-    if (!match || match.host !== identity) return;
-    const guestId = msg.guestId;
-    if (!match.pending.includes(guestId)) return;
+    if (match) {
+      if (match.host !== identity) return;
+      const guestId = msg.guestId;
+      if (!match.pending.includes(guestId)) return;
 
-    match.pending = match.pending.filter((p) => p !== guestId);
-    send(guestId, { type: 'hosted_rejected', matchId: match.code });
-    broadcastHostedState(match);
+      match.pending = match.pending.filter((p) => p !== guestId);
+      send(guestId, { type: 'hosted_rejected', matchId: match.code });
+      broadcastHostedState(match);
+      return;
+    }
+
+    const tournament = tournaments.get(msg.matchId);
+    if (tournament) {
+      if (tournament.host !== identity) return;
+      const guestId = msg.guestId;
+      if (!tournament.pending.includes(guestId)) return;
+
+      tournament.pending = tournament.pending.filter((p) => p !== guestId);
+      send(guestId, { type: 'hosted_rejected', matchId: tournament.code });
+      broadcastTournamentState(tournament);
+    }
     return;
   }
 
@@ -561,42 +803,109 @@ function handleMessage(identity, raw) {
     return;
   }
 
+  if (msg.type === 'start_tournament') {
+    const tournament = tournaments.get(msg.code);
+    if (!tournament || tournament.host !== identity) return;
+    if (tournament.status !== 'registration') return;
+    if (tournament.players.length < 2) {
+      send(identity, { type: 'hosted_error', message: 'Mindestens 2 Spieler nötig, um zu starten.' });
+      return;
+    }
+
+    buildBracket(tournament);
+    tournament.status = 'in_progress';
+    advanceTournament(tournament);
+    broadcastTournamentState(tournament);
+    return;
+  }
+
+  if (msg.type === 'tournament_choice') {
+    const tournament = tournaments.get(msg.code);
+    if (!tournament || tournament.status !== 'in_progress') return;
+    const matchup = findMatchup(tournament, msg.matchupId);
+    if (!matchup || matchup.status !== 'ready') return;
+    if (!matchup.players.includes(identity)) return;
+    if (!CHOICES.includes(msg.choice)) return;
+    if (matchup.choices[identity]) return;
+
+    matchup.choices[identity] = msg.choice;
+
+    if (Object.keys(matchup.choices).length === 2) {
+      matchup.status = 'countdown';
+      broadcastTournamentState(tournament);
+
+      setTimeout(() => {
+        const t = tournaments.get(msg.code);
+        if (!t) return;
+        const m = findMatchup(t, msg.matchupId);
+        if (!m || m.status !== 'countdown') return;
+        resolveMatchupRound(t, m);
+        broadcastTournamentState(t);
+      }, 3000);
+    } else {
+      broadcastTournamentState(tournament);
+    }
+    return;
+  }
+
   if (msg.type === 'leave_hosted_match') {
     const match = hostedMatches.get(msg.matchId);
-    if (!match) return;
-    if (match.players.includes(identity)) {
-      forfeitHostedMatch(match, identity);
-    } else if (match.pending.includes(identity)) {
-      match.pending = match.pending.filter((p) => p !== identity);
-      broadcastHostedState(match);
-    } else {
-      match.spectators.delete(identity);
+    if (match) {
+      if (match.players.includes(identity)) {
+        forfeitHostedMatch(match, identity);
+      } else if (match.pending.includes(identity)) {
+        match.pending = match.pending.filter((p) => p !== identity);
+        broadcastHostedState(match);
+      } else {
+        match.spectators.delete(identity);
+      }
+      return;
+    }
+
+    const tournament = tournaments.get(msg.matchId);
+    if (tournament) {
+      if (tournament.status === 'registration') {
+        tournament.players = tournament.players.filter((p) => p !== identity);
+        tournament.pending = tournament.pending.filter((p) => p !== identity);
+      } else if (tournament.status === 'in_progress' && tournament.players.includes(identity)) {
+        forfeitTournamentMatchup(tournament, identity);
+      } else {
+        tournament.spectators.delete(identity);
+      }
+      broadcastTournamentState(tournament);
     }
     return;
   }
 
   if (msg.type === 'close_hosted_match') {
     const match = hostedMatches.get(msg.matchId);
-    if (!match || match.host !== identity) return;
-    const recipients = hostedRecipients(match);
-    hostedMatches.delete(match.code);
-    for (const user of recipients) {
-      send(user, { type: 'hosted_closed', matchId: match.code });
+    if (match) {
+      if (match.host !== identity) return;
+      const recipients = hostedRecipients(match);
+      hostedMatches.delete(match.code);
+      for (const user of recipients) {
+        send(user, { type: 'hosted_closed', matchId: match.code });
+      }
+      return;
     }
+
+    const tournament = tournaments.get(msg.matchId);
+    if (tournament) {
+      if (tournament.host !== identity) return;
+      const recipients = tournamentRecipients(tournament);
+      tournaments.delete(tournament.code);
+      for (const user of recipients) {
+        send(user, { type: 'hosted_closed', matchId: tournament.code });
+      }
+    }
+    return;
   }
 }
 
 function handleDisconnect(identity) {
   if (sockets.get(identity) !== this) return;
   sockets.delete(identity);
-  removeFromQueue(identity);
-  for (const [matchId, match] of matches.entries()) {
-    if (match.players.includes(identity)) {
-      const opponent = opponentOf(match, identity);
-      send(opponent, { type: 'opponent_left', matchId });
-      endMatch(matchId);
-    }
-  }
+
   for (const match of hostedMatches.values()) {
     if (match.players.includes(identity)) {
       forfeitHostedMatch(match, identity);
@@ -605,6 +914,21 @@ function handleDisconnect(identity) {
       broadcastHostedState(match);
     } else {
       match.spectators.delete(identity);
+    }
+  }
+
+  for (const tournament of tournaments.values()) {
+    if (tournament.status === 'registration') {
+      if (tournament.players.includes(identity) || tournament.pending.includes(identity)) {
+        tournament.players = tournament.players.filter((p) => p !== identity);
+        tournament.pending = tournament.pending.filter((p) => p !== identity);
+        broadcastTournamentState(tournament);
+      }
+    } else if (tournament.status === 'in_progress' && tournament.players.includes(identity)) {
+      forfeitTournamentMatchup(tournament, identity);
+      broadcastTournamentState(tournament);
+    } else if (tournament.spectators.has(identity)) {
+      tournament.spectators.delete(identity);
     }
   }
 }

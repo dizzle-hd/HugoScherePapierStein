@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HUGO SWP</title>
-  <link rel="icon" href="images/hugo-logo.png" />
+  <title>AXXIN SSP</title>
+  <link rel="icon" href="images/Axxin-SSP.png" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -14,7 +14,7 @@
       <button id="logout-btn" class="link-btn">Abmelden</button>
     </header>
 
-    <img class="logo logo-game" src="images/hugo-logo.png" alt="HUGO SWP – Schere, Stein, Papier" />
+    <img class="logo logo-game" src="images/Axxin-SSP.png" alt="AXXIN SSP – Schere, Stein, Papier" />
 
     <section class="stats">
       <div><span id="stat-wins">0</span><small>Siege</small></div>
@@ -24,20 +24,12 @@
 
     <section id="mode-select" class="mode-select">
       <button id="mode-bot-btn" class="mode-btn">🤖<br />Gegen Bot spielen</button>
-      <button id="mode-multiplayer-btn" class="mode-btn">🧑‍🤝‍🧑<br />Gegen Spieler spielen</button>
       <button id="mode-join-code-btn" class="mode-btn">🔑<br />Mit Code beitreten</button>
       <button id="mode-host-btn" class="mode-btn admin-btn hidden">🎙️<br />Spiel hosten (Admin)</button>
-    </section>
-
-    <section id="waiting-panel" class="waiting-panel hidden">
-      <p>Suche Gegner…</p>
-      <div class="spinner"></div>
-      <button id="cancel-queue-btn" class="link-btn">Abbrechen</button>
+      <button id="mode-tournament-btn" class="mode-btn admin-btn hidden">🏆<br />Turnier starten (Admin)</button>
     </section>
 
     <section id="game-section" class="hidden">
-      <p id="opponent-status" class="opponent-status"></p>
-
       <section class="arena">
         <div class="player">
           <p class="label">Du</p>
@@ -47,7 +39,7 @@
         <div id="center-display" class="center">VS</div>
 
         <div class="player">
-          <p id="opponent-label" class="label">Bot</p>
+          <p class="label">Bot</p>
           <div id="computer-hand" class="hand">❔</div>
         </div>
       </section>
@@ -61,7 +53,6 @@
       </section>
 
       <div class="post-round-actions">
-        <button id="rematch-btn" class="link-btn hidden">Nächste Runde suchen</button>
         <button id="back-to-menu-btn" class="link-btn">← Zurück zum Menü</button>
       </div>
     </section>
@@ -157,6 +148,77 @@
       <div class="post-round-actions">
         <button id="hosted-close-btn" class="link-btn hidden">Match schließen</button>
         <button id="hosted-back-btn" class="link-btn">← Zurück zum Menü</button>
+      </div>
+    </section>
+
+    <section id="tournament-setup-panel" class="form-panel hidden">
+      <h2>Turnier erstellen</h2>
+
+      <label for="tournament-target-score">Punkte zum Sieg pro Match</label>
+      <input type="number" id="tournament-target-score" min="1" max="50" value="1" />
+
+      <div id="tournament-prizes-container"></div>
+
+      <button id="create-tournament-btn" type="button">Turnier erstellen</button>
+      <p id="tournament-setup-message" class="message"></p>
+      <button id="tournament-setup-back-btn" class="link-btn">← Zurück zum Menü</button>
+    </section>
+
+    <section id="tournament-section" class="hidden">
+      <div id="tournament-code-banner" class="hosted-code-banner hidden">
+        <span>Code: <strong id="tournament-code-display"></strong></span>
+        <button id="tournament-copy-link-btn" type="button" class="link-btn">Link kopieren</button>
+      </div>
+
+      <div id="tournament-pending-panel" class="hosted-pending-panel hidden">
+        <h3>Beitrittsanfragen</h3>
+        <input type="text" id="tournament-pending-search" placeholder="Name suchen…" autocomplete="off" />
+        <div id="tournament-pending-list" class="pending-list"></div>
+      </div>
+
+      <div id="tournament-prizes-banner" class="stake-banner"></div>
+
+      <div id="tournament-roster-panel" class="tournament-roster-panel hidden">
+        <h3>Teilnehmer <span id="tournament-roster-count"></span></h3>
+        <div id="tournament-roster-list" class="tournament-roster-list"></div>
+        <button id="start-tournament-btn" type="button" class="hidden">Turnier starten</button>
+      </div>
+
+      <p id="tournament-status-text" class="opponent-status"></p>
+
+      <div id="tournament-my-matchup" class="hidden">
+        <p class="label">Dein Match</p>
+        <div class="score-bar" id="tournament-my-score-bar"></div>
+        <section class="arena">
+          <div class="player">
+            <p id="tournament-label-a" class="label">?</p>
+            <div id="tournament-hand-a" class="hand">❔</div>
+          </div>
+
+          <div id="tournament-center-display" class="center">VS</div>
+
+          <div class="player">
+            <p id="tournament-label-b" class="label">?</p>
+            <div id="tournament-hand-b" class="hand">❔</div>
+          </div>
+        </section>
+
+        <p id="tournament-result-text" class="result"></p>
+
+        <section id="tournament-choices" class="choices hidden">
+          <button class="tournament-choice-btn" data-choice="stein">🪨<br />Stein</button>
+          <button class="tournament-choice-btn" data-choice="papier">📄<br />Papier</button>
+          <button class="tournament-choice-btn" data-choice="schere">✂️<br />Schere</button>
+        </section>
+      </div>
+
+      <div id="tournament-bracket" class="tournament-bracket"></div>
+
+      <div id="tournament-standings" class="tournament-standings hidden"></div>
+
+      <div class="post-round-actions">
+        <button id="tournament-close-btn" class="link-btn hidden">Turnier abbrechen</button>
+        <button id="tournament-back-btn" class="link-btn">← Zurück zum Menü</button>
       </div>
     </section>
   </main>
