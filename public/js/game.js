@@ -89,6 +89,8 @@ let hostedMatchId = null;
 let hostedState = null;
 let hostedRevealResolve = null;
 let hostedMyPendingChoice = null;
+let hostedPaused = false;
+let hostedResetTimer = null;
 
 function renderStats(stats) {
   if (!stats) return;
@@ -206,6 +208,7 @@ async function playBotRound(choice) {
 
   playerHand.classList.remove('shake');
   computerHand.classList.remove('shake');
+  centerDisplay.textContent = 'VS';
 
   if (data.error) {
     resultText.textContent = data.error;
@@ -213,14 +216,22 @@ async function playBotRound(choice) {
       window.location.href = 'index.html';
       return;
     }
-  } else {
-    computerHand.textContent = ICONS[data.computerChoice];
-    showResult(data.result, data.stats);
+    setChoicesDisabled(false);
+    busy = false;
+    return;
   }
 
-  centerDisplay.textContent = 'VS';
-  setChoicesDisabled(false);
-  busy = false;
+  computerHand.textContent = ICONS[data.computerChoice];
+  showResult(data.result, data.stats);
+
+  setTimeout(() => {
+    playerHand.textContent = '❔';
+    computerHand.textContent = '❔';
+    resultText.textContent = '';
+    resultText.className = 'result';
+    setChoicesDisabled(false);
+    busy = false;
+  }, 3000);
 }
 
 /* ---------------- Shared countdown / result ---------------- */
@@ -456,11 +467,34 @@ function renderHostedLabels(state) {
 
 function renderHostedButtons(state) {
   const isPlayer = state.role === 'player';
+  hostedChoicesSection.classList.toggle('hidden', !isPlayer);
+  hostedCloseBtn.classList.toggle('hidden', state.role !== 'host');
+
+  if (hostedPaused) {
+    hostedChoiceButtons.forEach((btn) => { btn.disabled = true; });
+    return;
+  }
+
   const me = state.players.find((p) => p.id === myId);
   const canChoose = isPlayer && state.status === 'ready' && me && !me.locked;
-  hostedChoicesSection.classList.toggle('hidden', !isPlayer);
   hostedChoiceButtons.forEach((btn) => { btn.disabled = !canChoose; });
-  hostedCloseBtn.classList.toggle('hidden', state.role !== 'host');
+}
+
+function scheduleHostedReset() {
+  if (hostedResetTimer) clearTimeout(hostedResetTimer);
+  hostedPaused = true;
+  hostedResetTimer = setTimeout(() => {
+    hostedResetTimer = null;
+    hostedPaused = false;
+    hostedHandA.textContent = '❔';
+    hostedHandB.textContent = '❔';
+    hostedResultText.textContent = '';
+    hostedResultText.className = 'result';
+    if (hostedState) {
+      renderHostedButtons(hostedState);
+      renderHostedStatusLine(hostedState);
+    }
+  }, 3000);
 }
 
 function renderHostedStatusLine(state) {
@@ -592,6 +626,8 @@ function renderHostedFinal(state) {
 }
 
 async function runHostedCountdown(state) {
+  clearHostedResetTimer();
+
   renderHostedHandsPreReveal(state);
   hostedHandA.classList.add('shake');
   hostedHandB.classList.add('shake');
@@ -604,6 +640,7 @@ async function runHostedCountdown(state) {
   hostedHandB.classList.remove('shake');
   hostedCenterDisplay.textContent = 'VS';
   hostedMyPendingChoice = null;
+  hostedPaused = true;
 
   renderHostedScoreboard(finalState);
   renderHostedLabels(finalState);
@@ -612,6 +649,7 @@ async function runHostedCountdown(state) {
   renderHostedPendingList(finalState);
 
   if (finalState.abortedBy) {
+    hostedPaused = false;
     renderHostedFinal(finalState);
     return;
   }
@@ -619,8 +657,12 @@ async function runHostedCountdown(state) {
     renderHostedReveal(finalState);
   }
   if (finalState.status === 'finished') {
+    hostedPaused = false;
     renderHostedFinal(finalState);
+    return;
   }
+
+  scheduleHostedReset();
 }
 
 function onHostedState(state) {
@@ -632,6 +674,7 @@ function onHostedState(state) {
   if (awaitingHostedEntry) {
     awaitingHostedEntry = false;
     mode = 'hosted';
+    clearHostedResetTimer();
     showPanel(hostedMatchSection);
     hostedCodeBanner.classList.toggle('hidden', state.role !== 'host');
     hostedCodeDisplay.textContent = state.code;
@@ -681,8 +724,17 @@ function handleHostedError(msg) {
   }
 }
 
+function clearHostedResetTimer() {
+  if (hostedResetTimer) {
+    clearTimeout(hostedResetTimer);
+    hostedResetTimer = null;
+  }
+  hostedPaused = false;
+}
+
 function handleHostedClosed(msg) {
   if (hostedMatchId !== msg.matchId) return;
+  clearHostedResetTimer();
   hostedChoicesSection.classList.add('hidden');
   hostedResultText.textContent = 'Match wurde vom Host geschlossen.';
   hostedResultText.className = 'result lose';
@@ -696,6 +748,7 @@ function handleHostedClosed(msg) {
 
 function handleHostedRejected(msg) {
   if (hostedMatchId !== msg.matchId) return;
+  clearHostedResetTimer();
   hostedChoicesSection.classList.add('hidden');
   hostedResultText.textContent = 'Der Host hat deine Beitrittsanfrage abgelehnt.';
   hostedResultText.className = 'result lose';
@@ -912,6 +965,7 @@ hostedBackBtn.addEventListener('click', () => {
   if (hostedMatchId) {
     wsSend({ type: 'leave_hosted_match', matchId: hostedMatchId });
   }
+  clearHostedResetTimer();
   hostedMatchId = null;
   hostedState = null;
   hostedRevealResolve = null;

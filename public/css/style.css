@@ -272,7 +272,8 @@ button[type="submit"]:active {
   gap: 1rem;
 }
 
-.choice-btn {
+.choice-btn,
+.hosted-choice-btn {
   flex: 1;
   max-width: 140px;
   padding: 1rem 0.5rem;
@@ -287,18 +288,21 @@ button[type="submit"]:active {
   transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease;
 }
 
-.choice-btn:hover:not(:disabled) {
+.choice-btn:hover:not(:disabled),
+.hosted-choice-btn:hover:not(:disabled) {
   background: linear-gradient(180deg, var(--purple-light), var(--purple) 65%, var(--purple-dark));
   transform: translateY(-2px);
   box-shadow: 0 6px 0 var(--black-outline);
 }
 
-.choice-btn:active:not(:disabled) {
+.choice-btn:active:not(:disabled),
+.hosted-choice-btn:active:not(:disabled) {
   transform: translateY(3px);
   box-shadow: 0 1px 0 var(--black-outline);
 }
 
-.choice-btn:disabled {
+.choice-btn:disabled,
+.hosted-choice-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
