@@ -386,3 +386,206 @@ button[type="submit"]:active {
   gap: 1rem;
   margin-top: 1rem;
 }
+
+/* ---- Admin / hosted matches ---- */
+
+.admin-btn {
+  border-color: #eab308 !important;
+  box-shadow: 0 4px 0 #92700a;
+}
+
+.admin-btn:hover {
+  background: linear-gradient(180deg, #fde68a, #eab308 65%, #92700a);
+  box-shadow: 0 6px 0 #92700a;
+}
+
+.admin-btn:active {
+  box-shadow: 0 1px 0 #92700a;
+}
+
+.form-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-align: left;
+  background: var(--panel);
+  border: 3px solid var(--black-outline);
+  border-radius: 14px;
+  padding: 1.5rem;
+  box-shadow: 0 6px 0 var(--black-outline);
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.form-panel h2 {
+  text-align: center;
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+}
+
+.form-panel label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+
+.form-panel input[type="text"],
+.form-panel input[type="number"] {
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 2px solid var(--panel-border);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 1rem;
+  width: 100%;
+}
+
+.form-panel input:focus {
+  outline: none;
+  border-color: var(--purple);
+}
+
+.form-panel > button {
+  margin-top: 1.25rem;
+  padding: 0.7rem;
+  border: 2px solid var(--black-outline);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--purple-light), var(--purple) 55%, var(--purple-dark));
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--black-outline);
+}
+
+.form-panel > button:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--black-outline);
+}
+
+.form-panel .link-btn {
+  align-self: center;
+  margin-top: 1rem;
+}
+
+.stake-type-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.stake-type-btn {
+  flex: 1;
+  padding: 0.55rem;
+  border-radius: 8px;
+  border: 2px solid var(--panel-border);
+  background: var(--bg-2);
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stake-type-btn.active {
+  border-color: var(--black-outline);
+  background: linear-gradient(180deg, var(--purple-light), var(--purple) 60%, var(--purple-dark));
+  color: #fff;
+}
+
+.stake-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.item-search-results {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+
+.item-search-results button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.item-search-results button:last-child {
+  border-bottom: none;
+}
+
+.item-search-results button:hover {
+  background: var(--purple-dark);
+}
+
+.selected-item-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 2px solid var(--purple);
+  background: rgba(139, 61, 255, 0.15);
+  font-weight: 600;
+}
+
+.hosted-code-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border: 2px solid var(--black-outline);
+  border-radius: 12px;
+  background: var(--panel);
+  font-size: 1.1rem;
+}
+
+.hosted-code-banner strong {
+  color: var(--purple-light);
+  letter-spacing: 0.15em;
+  font-size: 1.3rem;
+}
+
+.stake-banner {
+  min-height: 1.2rem;
+  text-align: center;
+  color: var(--red-light);
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.score-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+}
+
+.score-bar .score-name {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: block;
+}
+
+.score-bar .score-value {
+  color: var(--purple-light);
+}
+
+.score-bar .score-sep {
+  color: var(--text-muted);
+  font-weight: 400;
+}

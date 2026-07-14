@@ -25,6 +25,8 @@
     <section id="mode-select" class="mode-select">
       <button id="mode-bot-btn" class="mode-btn">🤖<br />Gegen Bot spielen</button>
       <button id="mode-multiplayer-btn" class="mode-btn">🧑‍🤝‍🧑<br />Gegen Spieler spielen</button>
+      <button id="mode-join-code-btn" class="mode-btn">🔑<br />Mit Code beitreten</button>
+      <button id="mode-host-btn" class="mode-btn admin-btn hidden">🎙️<br />Spiel hosten (Admin)</button>
     </section>
 
     <section id="waiting-panel" class="waiting-panel hidden">
@@ -61,6 +63,94 @@
       <div class="post-round-actions">
         <button id="rematch-btn" class="link-btn hidden">Nächste Runde suchen</button>
         <button id="back-to-menu-btn" class="link-btn">← Zurück zum Menü</button>
+      </div>
+    </section>
+
+    <section id="join-code-panel" class="form-panel hidden">
+      <h2>Mit Code beitreten</h2>
+      <label for="join-code-input">Spielcode</label>
+      <input type="text" id="join-code-input" maxlength="6" placeholder="z.B. AB3XZ9" autocomplete="off" />
+      <button id="join-code-btn" type="button">Beitreten</button>
+      <p id="join-code-message" class="message"></p>
+      <button id="join-code-back-btn" class="link-btn">← Zurück zum Menü</button>
+    </section>
+
+    <section id="host-setup-panel" class="form-panel hidden">
+      <h2>Spiel hosten</h2>
+
+      <label for="host-target-score">Punkte zum Sieg</label>
+      <input type="number" id="host-target-score" min="1" max="50" value="3" />
+
+      <label>Einsatz</label>
+      <div class="stake-type-tabs">
+        <button type="button" class="stake-type-btn active" data-stake-type="money">💶 Geld</button>
+        <button type="button" class="stake-type-btn" data-stake-type="item">⛏️ Minecraft-Item</button>
+      </div>
+
+      <div id="stake-money-fields" class="stake-fields">
+        <label for="stake-amount">Betrag (€)</label>
+        <input type="number" id="stake-amount" min="0.01" step="0.01" placeholder="z.B. 5" />
+      </div>
+
+      <div id="stake-item-fields" class="stake-fields hidden">
+        <label for="item-search">Minecraft-Item suchen</label>
+        <input type="text" id="item-search" placeholder="z.B. Diamantschwert" autocomplete="off" />
+        <div id="item-search-results" class="item-search-results hidden"></div>
+
+        <div id="selected-item-display" class="selected-item-display hidden">
+          <span id="selected-item-name"></span>
+          <button type="button" id="clear-selected-item-btn" class="link-btn">Ändern</button>
+        </div>
+
+        <label for="stake-custom-label">Eigene Bezeichnung (optional)</label>
+        <input type="text" id="stake-custom-label" placeholder="z.B. mit Schärfe V" maxlength="80" />
+
+        <label for="stake-quantity">Menge</label>
+        <input type="number" id="stake-quantity" min="1" value="1" />
+      </div>
+
+      <button id="create-host-match-btn" type="button">Spiel erstellen</button>
+      <p id="host-setup-message" class="message"></p>
+      <button id="host-setup-back-btn" class="link-btn">← Zurück zum Menü</button>
+    </section>
+
+    <section id="hosted-match-section" class="hidden">
+      <div id="hosted-code-banner" class="hosted-code-banner hidden">
+        <span>Code: <strong id="hosted-code-display"></strong></span>
+        <button id="copy-join-link-btn" type="button" class="link-btn">Link kopieren</button>
+      </div>
+
+      <div id="hosted-stake-banner" class="stake-banner"></div>
+
+      <div id="hosted-score-bar" class="score-bar"></div>
+
+      <p id="hosted-status-text" class="opponent-status"></p>
+
+      <section class="arena">
+        <div class="player">
+          <p id="hosted-label-a" class="label">?</p>
+          <div id="hosted-hand-a" class="hand">❔</div>
+        </div>
+
+        <div id="hosted-center-display" class="center">VS</div>
+
+        <div class="player">
+          <p id="hosted-label-b" class="label">?</p>
+          <div id="hosted-hand-b" class="hand">❔</div>
+        </div>
+      </section>
+
+      <p id="hosted-result-text" class="result"></p>
+
+      <section id="hosted-choices" class="choices hidden">
+        <button class="hosted-choice-btn" data-choice="stein">🪨<br />Stein</button>
+        <button class="hosted-choice-btn" data-choice="papier">📄<br />Papier</button>
+        <button class="hosted-choice-btn" data-choice="schere">✂️<br />Schere</button>
+      </section>
+
+      <div class="post-round-actions">
+        <button id="hosted-close-btn" class="link-btn hidden">Match schließen</button>
+        <button id="hosted-back-btn" class="link-btn">← Zurück zum Menü</button>
       </div>
     </section>
   </main>

@@ -15,6 +15,11 @@ const CHOICES = ['stein', 'papier', 'schere'];
 const BEATS = { stein: 'schere', schere: 'papier', papier: 'stein' };
 const SESSION_SECRET = process.env.SESSION_SECRET || 'schere-stein-papier-secret';
 const sessionStore = new session.MemoryStore();
+const ADMIN_USERNAMES = ['axxin', 'drpacket', 'hugo'];
+
+function isAdmin(username) {
+  return ADMIN_USERNAMES.includes(username);
+}
 
 function loadUsers() {
   if (!fs.existsSync(USERS_FILE)) return {};
@@ -81,7 +86,7 @@ app.post('/api/register', (req, res) => {
   saveUsers(users);
 
   req.session.username = key;
-  res.json({ username: trimmedUsername, stats: users[key].stats });
+  res.json({ username: trimmedUsername, stats: users[key].stats, isAdmin: isAdmin(key) });
 });
 
 app.post('/api/login', (req, res) => {
@@ -97,7 +102,7 @@ app.post('/api/login', (req, res) => {
   }
 
   req.session.username = key;
-  res.json({ username: user.username, stats: user.stats });
+  res.json({ username: user.username, stats: user.stats, isAdmin: isAdmin(key) });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -113,7 +118,7 @@ app.get('/api/me', requireAuth, (req, res) => {
   if (!user) {
     return res.status(401).json({ error: 'Nicht angemeldet.' });
   }
-  res.json({ username: user.username, stats: user.stats });
+  res.json({ username: user.username, stats: user.stats, isAdmin: isAdmin(req.session.username) });
 });
 
 app.post('/api/play', requireAuth, (req, res) => {
@@ -173,6 +178,93 @@ function tryMatchmake() {
     send(a, { type: 'match_found', matchId, opponent: b });
     send(b, { type: 'match_found', matchId, opponent: a });
   }
+}
+
+/* ---------------- Hosted matches (admin-run, code to join, stakes) ---------------- */
+
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
+const hostedMatches = new Map(); // code -> hosted match state
+
+function generateHostedCode() {
+  let code;
+  do {
+    code = '';
+    for (let i = 0; i < 6; i++) {
+      code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    }
+  } while (hostedMatches.has(code));
+  return code;
+}
+
+function isValidStake(stake) {
+  if (!stake || typeof stake !== 'object') return false;
+  if (stake.type === 'money') {
+    return typeof stake.amount === 'number' && stake.amount > 0 && Number.isFinite(stake.amount);
+  }
+  if (stake.type === 'item') {
+    return (
+      typeof stake.itemId === 'string' && stake.itemId.length > 0 &&
+      typeof stake.itemName === 'string' && stake.itemName.length > 0 &&
+      Number.isInteger(stake.quantity) && stake.quantity > 0
+    );
+  }
+  return false;
+}
+
+function sanitizeStake(stake) {
+  if (stake.type === 'money') {
+    return { type: 'money', amount: stake.amount, currency: 'EUR' };
+  }
+  return {
+    type: 'item',
+    itemId: stake.itemId,
+    itemName: stake.itemName,
+    customLabel: typeof stake.customLabel === 'string' ? stake.customLabel.trim().slice(0, 80) : '',
+    quantity: stake.quantity
+  };
+}
+
+function hostedRecipients(match) {
+  return new Set([match.host, ...match.players, ...match.spectators]);
+}
+
+function buildHostedStatePayload(match, username) {
+  const role = username === match.host ? 'host' : (match.players.includes(username) ? 'player' : 'spectator');
+  return {
+    type: 'hosted_state',
+    matchId: match.code,
+    code: match.code,
+    status: match.status,
+    targetScore: match.targetScore,
+    stake: match.stake,
+    role,
+    host: match.host,
+    players: match.players.map((p) => ({
+      username: p,
+      score: match.scores[p],
+      locked: Boolean(match.choices[p])
+    })),
+    opponent: role === 'player' ? (opponentOf(match, username) || null) : null,
+    lastRound: match.lastRound,
+    winner: match.winner,
+    abortedBy: match.abortedBy || null
+  };
+}
+
+function broadcastHostedState(match) {
+  for (const user of hostedRecipients(match)) {
+    send(user, buildHostedStatePayload(match, user));
+  }
+}
+
+function forfeitHostedMatch(match, leavingUsername) {
+  if (match.status === 'finished') return;
+  const remaining = opponentOf(match, leavingUsername);
+  match.status = 'finished';
+  match.winner = remaining || null;
+  match.abortedBy = leavingUsername;
+  match.choices = {};
+  broadcastHostedState(match);
 }
 
 function handleMessage(username, raw) {
@@ -254,6 +346,139 @@ function handleMessage(username, raw) {
     const opponent = opponentOf(match, username);
     send(opponent, { type: 'opponent_left', matchId: msg.matchId });
     endMatch(msg.matchId);
+    return;
+  }
+
+  if (msg.type === 'create_hosted_match') {
+    if (!isAdmin(username)) {
+      send(username, { type: 'hosted_error', message: 'Nur Admins können ein Spiel hosten.' });
+      return;
+    }
+    const targetScore = Number(msg.targetScore);
+    if (!Number.isInteger(targetScore) || targetScore < 1 || targetScore > 50) {
+      send(username, { type: 'hosted_error', message: 'Ungültige Punktzahl (1-50).' });
+      return;
+    }
+    if (!isValidStake(msg.stake)) {
+      send(username, { type: 'hosted_error', message: 'Ungültiger Einsatz.' });
+      return;
+    }
+
+    const code = generateHostedCode();
+    const match = {
+      code,
+      host: username,
+      targetScore,
+      stake: sanitizeStake(msg.stake),
+      players: [],
+      scores: {},
+      choices: {},
+      status: 'waiting',
+      lastRound: null,
+      winner: null,
+      abortedBy: null,
+      spectators: new Set()
+    };
+    hostedMatches.set(code, match);
+    broadcastHostedState(match);
+    return;
+  }
+
+  if (msg.type === 'join_hosted_match') {
+    const code = typeof msg.code === 'string' ? msg.code.trim().toUpperCase() : '';
+    const match = hostedMatches.get(code);
+    if (!match) {
+      send(username, { type: 'hosted_error', message: 'Code nicht gefunden.' });
+      return;
+    }
+
+    if (username !== match.host && !match.players.includes(username)) {
+      if (match.players.length < 2 && match.status !== 'finished') {
+        match.players.push(username);
+        match.scores[username] = 0;
+        if (match.players.length === 2) {
+          match.status = 'ready';
+        }
+      } else {
+        match.spectators.add(username);
+      }
+    }
+
+    broadcastHostedState(match);
+    return;
+  }
+
+  if (msg.type === 'hosted_choice') {
+    const match = hostedMatches.get(msg.matchId);
+    if (!match) return;
+    if (!match.players.includes(username)) return;
+    if (match.status !== 'ready') return;
+    if (!CHOICES.includes(msg.choice)) return;
+    if (match.choices[username]) return;
+
+    match.choices[username] = msg.choice;
+
+    if (Object.keys(match.choices).length === 2) {
+      match.status = 'countdown';
+      broadcastHostedState(match);
+
+      setTimeout(() => {
+        const current = hostedMatches.get(msg.matchId);
+        if (!current || current.status !== 'countdown') return;
+
+        const [playerA, playerB] = current.players;
+        const choiceA = current.choices[playerA];
+        const choiceB = current.choices[playerB];
+        const resultForA = judge(choiceA, choiceB);
+
+        let roundWinner = null;
+        if (resultForA === 'gewonnen') roundWinner = playerA;
+        else if (resultForA === 'verloren') roundWinner = playerB;
+
+        if (roundWinner) {
+          current.scores[roundWinner] += 1;
+        }
+
+        current.lastRound = {
+          choices: { [playerA]: choiceA, [playerB]: choiceB },
+          winner: roundWinner
+        };
+        current.choices = {};
+
+        if (roundWinner && current.scores[roundWinner] >= current.targetScore) {
+          current.status = 'finished';
+          current.winner = roundWinner;
+        } else {
+          current.status = 'ready';
+        }
+
+        broadcastHostedState(current);
+      }, 3000);
+    } else {
+      broadcastHostedState(match);
+    }
+    return;
+  }
+
+  if (msg.type === 'leave_hosted_match') {
+    const match = hostedMatches.get(msg.matchId);
+    if (!match) return;
+    if (match.players.includes(username)) {
+      forfeitHostedMatch(match, username);
+    } else {
+      match.spectators.delete(username);
+    }
+    return;
+  }
+
+  if (msg.type === 'close_hosted_match') {
+    const match = hostedMatches.get(msg.matchId);
+    if (!match || match.host !== username) return;
+    const recipients = hostedRecipients(match);
+    hostedMatches.delete(match.code);
+    for (const user of recipients) {
+      send(user, { type: 'hosted_closed', matchId: match.code });
+    }
   }
 }
 
@@ -266,6 +491,13 @@ function handleDisconnect(username) {
       const opponent = opponentOf(match, username);
       send(opponent, { type: 'opponent_left', matchId });
       endMatch(matchId);
+    }
+  }
+  for (const match of hostedMatches.values()) {
+    if (match.players.includes(username)) {
+      forfeitHostedMatch(match, username);
+    } else {
+      match.spectators.delete(username);
     }
   }
 }
