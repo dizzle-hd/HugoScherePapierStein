@@ -1,0 +1,250 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: linear-gradient(135deg, #1f2937, #111827);
+  color: #f3f4f6;
+}
+
+/* ---- Auth page ---- */
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.card {
+  background: #1f2937;
+  border-radius: 16px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.card h1 {
+  text-align: center;
+  font-size: 1.4rem;
+  margin-bottom: 1.5rem;
+}
+
+.tabs {
+  display: flex;
+  margin-bottom: 1.5rem;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #374151;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 0.6rem;
+  background: transparent;
+  color: #9ca3af;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tab-btn.active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.tab-panel {
+  display: none;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
+label {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-top: 0.5rem;
+}
+
+input {
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #374151;
+  background: #111827;
+  color: #f3f4f6;
+  font-size: 1rem;
+}
+
+input:focus {
+  outline: 2px solid #2563eb;
+}
+
+button[type="submit"] {
+  margin-top: 1.25rem;
+  padding: 0.7rem;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button[type="submit"]:hover {
+  background: #1d4ed8;
+}
+
+.message {
+  min-height: 1.2rem;
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #f87171;
+}
+
+.message.success {
+  color: #4ade80;
+}
+
+/* ---- Game page ---- */
+
+.game-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #9ca3af;
+  margin-bottom: 1rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #60a5fa;
+  cursor: pointer;
+  font-size: 0.9rem;
+  text-decoration: underline;
+}
+
+.game-page h1 {
+  margin: 0.5rem 0 1.5rem;
+}
+
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.stats div {
+  display: flex;
+  flex-direction: column;
+}
+
+.stats span {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.stats small {
+  color: #9ca3af;
+}
+
+.arena {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.player {
+  flex: 1;
+}
+
+.label {
+  color: #9ca3af;
+  margin-bottom: 0.5rem;
+}
+
+.hand {
+  font-size: 4rem;
+  height: 5.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+
+.hand.shake {
+  animation: shake 0.4s infinite;
+}
+
+@keyframes shake {
+  0%, 100% { transform: rotate(-8deg); }
+  50% { transform: rotate(8deg); }
+}
+
+.center {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #6b7280;
+  width: 4rem;
+}
+
+.result {
+  min-height: 2rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+}
+
+.result.win { color: #4ade80; }
+.result.lose { color: #f87171; }
+.result.draw { color: #facc15; }
+
+.choices {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.choice-btn {
+  flex: 1;
+  max-width: 140px;
+  padding: 1rem 0.5rem;
+  border-radius: 12px;
+  border: 2px solid #374151;
+  background: #1f2937;
+  color: #f3f4f6;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.choice-btn:hover:not(:disabled) {
+  border-color: #2563eb;
+  transform: translateY(-2px);
+}
+
+.choice-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

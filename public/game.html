@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schere Stein Papier – Spiel</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main class="game-page">
+    <header class="topbar">
+      <span>Angemeldet als <strong id="current-username">…</strong></span>
+      <button id="logout-btn" class="link-btn">Abmelden</button>
+    </header>
+
+    <h1>Schere, Stein, Papier</h1>
+
+    <section class="stats">
+      <div><span id="stat-wins">0</span><small>Siege</small></div>
+      <div><span id="stat-draws">0</span><small>Unentschieden</small></div>
+      <div><span id="stat-losses">0</span><small>Niederlagen</small></div>
+    </section>
+
+    <section class="arena">
+      <div class="player">
+        <p class="label">Du</p>
+        <div id="player-hand" class="hand">❔</div>
+      </div>
+
+      <div id="center-display" class="center">VS</div>
+
+      <div class="player">
+        <p class="label">Computer</p>
+        <div id="computer-hand" class="hand">❔</div>
+      </div>
+    </section>
+
+    <p id="result-text" class="result"></p>
+
+    <section class="choices">
+      <button class="choice-btn" data-choice="stein">🪨<br />Stein</button>
+      <button class="choice-btn" data-choice="papier">📄<br />Papier</button>
+      <button class="choice-btn" data-choice="schere">✂️<br />Schere</button>
+    </section>
+  </main>
+
+  <script src="js/game.js"></script>
+</body>
+</html>

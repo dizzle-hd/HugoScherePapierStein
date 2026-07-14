@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schere Stein Papier – Login</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main class="auth-page">
+    <div class="card">
+      <h1>✊✋✌️ Schere, Stein, Papier</h1>
+
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="login">Anmelden</button>
+        <button class="tab-btn" data-tab="register">Registrieren</button>
+      </div>
+
+      <form id="login-form" class="tab-panel active">
+        <label for="login-username">Benutzername</label>
+        <input type="text" id="login-username" autocomplete="username" required />
+
+        <label for="login-password">Passwort</label>
+        <input type="password" id="login-password" autocomplete="current-password" required />
+
+        <button type="submit">Anmelden</button>
+      </form>
+
+      <form id="register-form" class="tab-panel">
+        <label for="register-username">Benutzername</label>
+        <input type="text" id="register-username" autocomplete="username" minlength="3" required />
+
+        <label for="register-password">Passwort</label>
+        <input type="password" id="register-password" autocomplete="new-password" minlength="6" required />
+
+        <button type="submit">Konto erstellen</button>
+      </form>
+
+      <p id="auth-message" class="message"></p>
+    </div>
+  </main>
+
+  <script src="js/auth.js"></script>
+</body>
+</html>
