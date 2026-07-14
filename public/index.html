@@ -13,11 +13,21 @@
       <img class="logo" src="images/hugo-logo.png" alt="HUGO SWP – Schere, Stein, Papier" />
 
       <div class="tabs">
-        <button class="tab-btn active" data-tab="login">Anmelden</button>
-        <button class="tab-btn" data-tab="register">Registrieren</button>
+        <button class="tab-btn active" data-tab="join">Mit Code beitreten</button>
+        <button class="tab-btn" data-tab="login">Admin-Login</button>
       </div>
 
-      <form id="login-form" class="tab-panel active">
+      <form id="join-form" class="tab-panel active">
+        <label for="join-name">Dein Name</label>
+        <input type="text" id="join-name" maxlength="24" autocomplete="off" required />
+
+        <label for="join-code">Spielcode</label>
+        <input type="text" id="join-code" maxlength="6" placeholder="z.B. AB3XZ9" autocomplete="off" required />
+
+        <button type="submit">Beitreten</button>
+      </form>
+
+      <form id="login-form" class="tab-panel">
         <label for="login-username">Benutzername</label>
         <input type="text" id="login-username" autocomplete="username" required />
 
@@ -25,16 +35,6 @@
         <input type="password" id="login-password" autocomplete="current-password" required />
 
         <button type="submit">Anmelden</button>
-      </form>
-
-      <form id="register-form" class="tab-panel">
-        <label for="register-username">Benutzername</label>
-        <input type="text" id="register-username" autocomplete="username" minlength="3" required />
-
-        <label for="register-password">Passwort</label>
-        <input type="password" id="register-password" autocomplete="new-password" minlength="6" required />
-
-        <button type="submit">Konto erstellen</button>
       </form>
 
       <p id="auth-message" class="message"></p>

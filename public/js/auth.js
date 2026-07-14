@@ -42,21 +42,36 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   }
 });
 
-document.getElementById('register-form').addEventListener('submit', async (e) => {
+document.getElementById('join-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const username = document.getElementById('register-username').value;
-  const password = document.getElementById('register-password').value;
+  const name = document.getElementById('join-name').value;
+  const code = document.getElementById('join-code').value;
   try {
-    await submitAuth('/api/register', { username, password });
-    window.location.href = 'game.html';
+    const data = await submitAuth('/api/guest-join', { name, code });
+    window.location.href = `game.html?join=${data.code}`;
   } catch (err) {
     setMessage(err.message);
   }
 });
 
+document.getElementById('join-code').addEventListener('input', (e) => {
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+});
+
+(() => {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('join');
+  if (code) {
+    document.getElementById('join-code').value = code.toUpperCase().slice(0, 6);
+  }
+})();
+
 (async () => {
   const res = await fetch('/api/me');
   if (res.ok) {
-    window.location.href = 'game.html';
+    const data = await res.json();
+    if (!data.isGuest) {
+      window.location.href = 'game.html';
+    }
   }
 })();

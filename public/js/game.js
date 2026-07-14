@@ -73,7 +73,9 @@ let currentMatchId = null;
 let revealResolve = null;
 
 let myUsername = null;
+let myId = null;
 let amIAdmin = false;
+let amIGuest = false;
 let mcItems = [];
 let selectedItem = null;
 let stakeType = 'money';
@@ -116,24 +118,44 @@ function showPanel(panel) {
   panel.classList.remove('hidden');
 }
 
+function backToStart() {
+  if (amIGuest) {
+    fetch('/api/logout', { method: 'POST' }).then(() => { window.location.href = 'index.html'; });
+    return;
+  }
+  mode = null;
+  showPanel(modeSelect);
+}
+
 async function loadMe() {
+  const params = new URLSearchParams(window.location.search);
+  const joinCode = params.get('join');
+
   const res = await fetch('/api/me');
   if (!res.ok) {
-    window.location.href = 'index.html';
+    window.location.href = 'index.html' + (joinCode ? `?join=${joinCode}` : '');
     return;
   }
   const data = await res.json();
   myUsername = data.username;
+  myId = data.id;
   amIAdmin = Boolean(data.isAdmin);
+  amIGuest = Boolean(data.isGuest);
   usernameEl.textContent = data.username;
   renderStats(data.stats);
+
+  if (amIGuest) {
+    document.querySelector('.stats').classList.add('hidden');
+    if (!joinCode) {
+      backToStart();
+      return;
+    }
+  }
 
   if (amIAdmin) {
     modeHostBtn.classList.remove('hidden');
   }
 
-  const params = new URLSearchParams(window.location.search);
-  const joinCode = params.get('join');
   if (joinCode) {
     attemptAutoJoin(joinCode.trim().toUpperCase());
   }
@@ -381,7 +403,7 @@ function buildScoreBlock(player, side) {
   const wrap = document.createElement('div');
   const nameEl = document.createElement('span');
   nameEl.className = 'score-name';
-  nameEl.textContent = player ? (player.username + (player.username === myUsername ? ' (Du)' : '')) : 'Warte…';
+  nameEl.textContent = player ? (player.name + (player.id === myId ? ' (Du)' : '')) : 'Warte…';
   const valueEl = document.createElement('span');
   valueEl.className = 'score-value';
   valueEl.textContent = String(player ? player.score : 0);
@@ -406,15 +428,20 @@ function renderHostedScoreboard(state) {
   hostedScoreBar.appendChild(buildScoreBlock(b, 'right'));
 }
 
+function hostedNameOf(state, id) {
+  const player = state.players.find((p) => p.id === id);
+  return player ? player.name : id;
+}
+
 function renderHostedLabels(state) {
   const [a, b] = state.players;
-  hostedLabelA.textContent = a ? (a.username + (a.username === myUsername ? ' (Du)' : '')) : 'Warte auf Spieler…';
-  hostedLabelB.textContent = b ? (b.username + (b.username === myUsername ? ' (Du)' : '')) : 'Warte auf Spieler…';
+  hostedLabelA.textContent = a ? (a.name + (a.id === myId ? ' (Du)' : '')) : 'Warte auf Spieler…';
+  hostedLabelB.textContent = b ? (b.name + (b.id === myId ? ' (Du)' : '')) : 'Warte auf Spieler…';
 }
 
 function renderHostedButtons(state) {
   const isPlayer = state.role === 'player';
-  const me = state.players.find((p) => p.username === myUsername);
+  const me = state.players.find((p) => p.id === myId);
   const canChoose = isPlayer && state.status === 'ready' && me && !me.locked;
   hostedChoicesSection.classList.toggle('hidden', !isPlayer);
   hostedChoiceButtons.forEach((btn) => { btn.disabled = !canChoose; });
@@ -428,7 +455,7 @@ function renderHostedStatusLine(state) {
     return;
   }
   if (state.status === 'ready' && state.role === 'player') {
-    const me = state.players.find((p) => p.username === myUsername);
+    const me = state.players.find((p) => p.id === myId);
     hostedStatusText.textContent = me && me.locked ? 'Du hast gewählt – warte auf Gegner…' : '';
     return;
   }
@@ -437,15 +464,15 @@ function renderHostedStatusLine(state) {
 
 function renderHostedHandsPreReveal(state) {
   const [a, b] = state.players;
-  hostedHandA.textContent = (a && a.username === myUsername && hostedMyPendingChoice) ? ICONS[hostedMyPendingChoice] : '❔';
-  hostedHandB.textContent = (b && b.username === myUsername && hostedMyPendingChoice) ? ICONS[hostedMyPendingChoice] : '❔';
+  hostedHandA.textContent = (a && a.id === myId && hostedMyPendingChoice) ? ICONS[hostedMyPendingChoice] : '❔';
+  hostedHandB.textContent = (b && b.id === myId && hostedMyPendingChoice) ? ICONS[hostedMyPendingChoice] : '❔';
 }
 
 function renderHostedReveal(state) {
   const [a, b] = state.players;
   const choices = state.lastRound.choices;
-  hostedHandA.textContent = a && choices[a.username] ? ICONS[choices[a.username]] : '❔';
-  hostedHandB.textContent = b && choices[b.username] ? ICONS[choices[b.username]] : '❔';
+  hostedHandA.textContent = a && choices[a.id] ? ICONS[choices[a.id]] : '❔';
+  hostedHandB.textContent = b && choices[b.id] ? ICONS[choices[b.id]] : '❔';
 
   let text;
   let cls = 'result';
@@ -453,11 +480,11 @@ function renderHostedReveal(state) {
     text = 'Unentschieden – nächste Runde!';
     cls += ' draw';
   } else if (state.role === 'player') {
-    const iWon = state.lastRound.winner === myUsername;
+    const iWon = state.lastRound.winner === myId;
     text = iWon ? 'Du gewinnst die Runde! 🎉' : 'Du verlierst die Runde.';
     cls += iWon ? ' win' : ' lose';
   } else {
-    text = `${state.lastRound.winner} gewinnt die Runde!`;
+    text = `${hostedNameOf(state, state.lastRound.winner)} gewinnt die Runde!`;
     cls += ' win';
   }
   hostedResultText.textContent = text;
@@ -470,11 +497,11 @@ function renderHostedFinal(state) {
   let cls = 'result';
 
   if (state.abortedBy) {
-    const abortedByMe = state.abortedBy === myUsername;
+    const abortedByMe = state.abortedBy === myId;
     if (state.winner) {
       text = abortedByMe
         ? 'Du hast das Match verlassen – Niederlage durch Aufgabe.'
-        : `${state.abortedBy} hat das Match verlassen – ${state.winner} gewinnt durch Aufgabe!`;
+        : `${hostedNameOf(state, state.abortedBy)} hat das Match verlassen – ${hostedNameOf(state, state.winner)} gewinnt durch Aufgabe!`;
       cls += abortedByMe ? ' lose' : ' win';
     } else {
       text = 'Das Match wurde abgebrochen.';
@@ -482,13 +509,13 @@ function renderHostedFinal(state) {
   } else if (state.winner) {
     const stakeText = describeStake(state.stake);
     if (state.role === 'player') {
-      const iWon = state.winner === myUsername;
+      const iWon = state.winner === myId;
       text = iWon
         ? `🎉 Du hast das Match gewonnen! Einsatz: ${stakeText}`
-        : `Du hast das Match verloren. Einsatz an ${state.winner}: ${stakeText}`;
+        : `Du hast das Match verloren. Einsatz an ${hostedNameOf(state, state.winner)}: ${stakeText}`;
       cls += iWon ? ' win' : ' lose';
     } else {
-      text = `🏆 ${state.winner} gewinnt das Match! Einsatz: ${stakeText}`;
+      text = `🏆 ${hostedNameOf(state, state.winner)} gewinnt das Match! Einsatz: ${stakeText}`;
       cls += ' win';
     }
   }
@@ -593,10 +620,9 @@ function handleHostedClosed(msg) {
   hostedResultText.className = 'result lose';
   hostedCloseBtn.classList.add('hidden');
   setTimeout(() => {
-    mode = null;
     hostedMatchId = null;
     hostedState = null;
-    showPanel(modeSelect);
+    backToStart();
   }, 2000);
 }
 
@@ -664,13 +690,13 @@ hostedChoiceButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     const choice = btn.dataset.choice;
     if (!hostedMatchId || !hostedState) return;
-    const me = hostedState.players.find((p) => p.username === myUsername);
+    const me = hostedState.players.find((p) => p.id === myId);
     if (hostedState.role !== 'player' || hostedState.status !== 'ready' || !me || me.locked) return;
 
     hostedMyPendingChoice = choice;
     const [a, b] = hostedState.players;
-    if (a && a.username === myUsername) hostedHandA.textContent = ICONS[choice];
-    if (b && b.username === myUsername) hostedHandB.textContent = ICONS[choice];
+    if (a && a.id === myId) hostedHandA.textContent = ICONS[choice];
+    if (b && b.id === myId) hostedHandB.textContent = ICONS[choice];
     hostedStatusText.textContent = 'Du hast gewählt – warte auf Gegner…';
     hostedChoiceButtons.forEach((b2) => { b2.disabled = true; });
 
@@ -702,8 +728,7 @@ modeHostBtn.addEventListener('click', () => {
 
 cancelQueueBtn.addEventListener('click', () => {
   wsSend({ type: 'leave_queue' });
-  mode = null;
-  showPanel(modeSelect);
+  backToStart();
 });
 
 backToMenuBtn.addEventListener('click', () => {
@@ -713,10 +738,9 @@ backToMenuBtn.addEventListener('click', () => {
   if (mode === 'multiplayer') {
     wsSend({ type: 'leave_queue' });
   }
-  mode = null;
   currentMatchId = null;
   busy = false;
-  showPanel(modeSelect);
+  backToStart();
 });
 
 rematchBtn.addEventListener('click', joinQueue);
@@ -735,10 +759,7 @@ joinCodeBtn.addEventListener('click', () => {
   attemptAutoJoin(code);
 });
 
-joinCodeBackBtn.addEventListener('click', () => {
-  mode = null;
-  showPanel(modeSelect);
-});
+joinCodeBackBtn.addEventListener('click', backToStart);
 
 stakeTypeButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -791,10 +812,7 @@ createHostMatchBtn.addEventListener('click', () => {
   wsSendWhenOpen({ type: 'create_hosted_match', targetScore, stake });
 });
 
-hostSetupBackBtn.addEventListener('click', () => {
-  mode = null;
-  showPanel(modeSelect);
-});
+hostSetupBackBtn.addEventListener('click', backToStart);
 
 copyJoinLinkBtn.addEventListener('click', async () => {
   if (!hostedState) return;
@@ -813,12 +831,11 @@ hostedBackBtn.addEventListener('click', () => {
   if (hostedMatchId) {
     wsSend({ type: 'leave_hosted_match', matchId: hostedMatchId });
   }
-  mode = null;
   hostedMatchId = null;
   hostedState = null;
   hostedRevealResolve = null;
   hostedMyPendingChoice = null;
-  showPanel(modeSelect);
+  backToStart();
 });
 
 hostedCloseBtn.addEventListener('click', () => {

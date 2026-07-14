@@ -1,6 +1,7 @@
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -17,6 +18,14 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'schere-stein-papier-secret
 const sessionStore = new session.MemoryStore();
 const ADMIN_USERNAMES = ['axxin', 'drpacket', 'hugo'];
 
+// Fixed accounts – the only accounts that can ever log in. There is no public
+// registration; passwords are seeded below (bcrypt hashes, not plaintext).
+const ADMIN_SEED = {
+  axxin: { username: 'Axxin', passwordHash: '$2a$10$/oyP7K4pfyAN9gNpdO4YVOoiI.IhWAnb4kwxeOqIN4p7zWHShheLm' },
+  drpacket: { username: 'DrPacket', passwordHash: '$2a$10$SpqN8Uy6wL364GG/31msYO.X6PiVlWwKd./7yvBLpw/VQCoKtFK.C' },
+  hugo: { username: 'Hugo', passwordHash: '$2a$10$WLh6ifSEE63ectH9dznXpefNYQRMYG.epfT/t4sCjSiH3GhBc0DY2' }
+};
+
 function isAdmin(username) {
   return ADMIN_USERNAMES.includes(username);
 }
@@ -31,6 +40,24 @@ function saveUsers(users) {
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
+function seedAdmins() {
+  const users = loadUsers();
+  let changed = false;
+  for (const [key, seed] of Object.entries(ADMIN_SEED)) {
+    if (!users[key]) {
+      users[key] = {
+        username: seed.username,
+        passwordHash: seed.passwordHash,
+        stats: { wins: 0, losses: 0, draws: 0 }
+      };
+      changed = true;
+    }
+  }
+  if (changed) saveUsers(users);
+}
+
+seedAdmins();
+
 function judge(choiceA, choiceB) {
   if (choiceA === choiceB) return 'unentschieden';
   return BEATS[choiceA] === choiceB ? 'gewonnen' : 'verloren';
@@ -40,6 +67,22 @@ function applyResult(user, result) {
   if (result === 'gewonnen') user.stats.wins += 1;
   else if (result === 'verloren') user.stats.losses += 1;
   else user.stats.draws += 1;
+}
+
+// Guests have no account: they join a hosted match with just a display name.
+// Their session "username" is an opaque internal id; the real-world name they
+// typed is only ever kept here, in memory, for as long as their session lives.
+const guestNames = new Map();
+
+function isGuestIdentity(identity) {
+  return typeof identity === 'string' && identity.startsWith('guest-');
+}
+
+function displayNameOf(identity) {
+  if (guestNames.has(identity)) return guestNames.get(identity);
+  const users = loadUsers();
+  if (users[identity]) return users[identity].username;
+  return identity;
 }
 
 app.use(express.json());
@@ -59,36 +102,6 @@ function requireAuth(req, res, next) {
   next();
 }
 
-app.post('/api/register', (req, res) => {
-  const { username, password } = req.body || {};
-  if (typeof username !== 'string' || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Benutzername und Passwort erforderlich.' });
-  }
-  const trimmedUsername = username.trim();
-  if (trimmedUsername.length < 3) {
-    return res.status(400).json({ error: 'Benutzername muss mindestens 3 Zeichen lang sein.' });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Passwort muss mindestens 6 Zeichen lang sein.' });
-  }
-
-  const users = loadUsers();
-  const key = trimmedUsername.toLowerCase();
-  if (users[key]) {
-    return res.status(409).json({ error: 'Benutzername bereits vergeben.' });
-  }
-
-  users[key] = {
-    username: trimmedUsername,
-    passwordHash: bcrypt.hashSync(password, 10),
-    stats: { wins: 0, losses: 0, draws: 0 }
-  };
-  saveUsers(users);
-
-  req.session.username = key;
-  res.json({ username: trimmedUsername, stats: users[key].stats, isAdmin: isAdmin(key) });
-});
-
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
   if (typeof username !== 'string' || typeof password !== 'string') {
@@ -102,10 +115,35 @@ app.post('/api/login', (req, res) => {
   }
 
   req.session.username = key;
-  res.json({ username: user.username, stats: user.stats, isAdmin: isAdmin(key) });
+  req.session.isGuest = false;
+  res.json({ id: key, username: user.username, stats: user.stats, isAdmin: isAdmin(key), isGuest: false });
+});
+
+app.post('/api/guest-join', (req, res) => {
+  const { name, code } = req.body || {};
+  if (typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 24) {
+    return res.status(400).json({ error: 'Bitte einen Namen (1-24 Zeichen) angeben.' });
+  }
+  const normalizedCode = typeof code === 'string' ? code.trim().toUpperCase() : '';
+  if (!/^[A-Z0-9]{6}$/.test(normalizedCode)) {
+    return res.status(400).json({ error: 'Bitte einen gültigen 6-stelligen Code angeben.' });
+  }
+  if (!hostedMatches.has(normalizedCode)) {
+    return res.status(404).json({ error: 'Code nicht gefunden.' });
+  }
+
+  const guestId = `guest-${crypto.randomBytes(8).toString('hex')}`;
+  guestNames.set(guestId, name.trim().slice(0, 24));
+
+  req.session.username = guestId;
+  req.session.isGuest = true;
+  res.json({ id: guestId, username: guestNames.get(guestId), isGuest: true, code: normalizedCode });
 });
 
 app.post('/api/logout', (req, res) => {
+  if (req.session.isGuest && req.session.username) {
+    guestNames.delete(req.session.username);
+  }
   req.session.destroy(() => {
     res.clearCookie('connect.sid');
     res.json({ ok: true });
@@ -113,15 +151,22 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', requireAuth, (req, res) => {
+  const identity = req.session.username;
+  if (req.session.isGuest) {
+    return res.json({ id: identity, username: displayNameOf(identity), stats: null, isAdmin: false, isGuest: true });
+  }
   const users = loadUsers();
-  const user = users[req.session.username];
+  const user = users[identity];
   if (!user) {
     return res.status(401).json({ error: 'Nicht angemeldet.' });
   }
-  res.json({ username: user.username, stats: user.stats, isAdmin: isAdmin(req.session.username) });
+  res.json({ id: identity, username: user.username, stats: user.stats, isAdmin: isAdmin(identity), isGuest: false });
 });
 
 app.post('/api/play', requireAuth, (req, res) => {
+  if (req.session.isGuest) {
+    return res.status(403).json({ error: 'Gäste können nur an ihrem gehosteten Match teilnehmen.' });
+  }
   const { choice } = req.body || {};
   if (!CHOICES.includes(choice)) {
     return res.status(400).json({ error: 'Ungueltige Auswahl.' });
@@ -144,25 +189,25 @@ app.post('/api/play', requireAuth, (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
-// key: username -> the single active socket for that user (last connection wins)
+// key: identity (account key or guest id) -> the single active socket for that identity
 const sockets = new Map();
-let queue = []; // usernames waiting for an opponent
-const matches = new Map(); // matchId -> { players: [username, username], choices: {} }
+let queue = []; // identities waiting for an opponent
+const matches = new Map(); // matchId -> { players: [identity, identity], choices: {} }
 let nextMatchId = 1;
 
-function send(username, payload) {
-  const ws = sockets.get(username);
+function send(identity, payload) {
+  const ws = sockets.get(identity);
   if (ws && ws.readyState === ws.OPEN) {
     ws.send(JSON.stringify(payload));
   }
 }
 
-function removeFromQueue(username) {
-  queue = queue.filter((u) => u !== username);
+function removeFromQueue(identity) {
+  queue = queue.filter((u) => u !== identity);
 }
 
-function opponentOf(match, username) {
-  return match.players.find((u) => u !== username);
+function opponentOf(match, identity) {
+  return match.players.find((u) => u !== identity);
 }
 
 function endMatch(matchId) {
@@ -175,8 +220,8 @@ function tryMatchmake() {
     const b = queue.shift();
     const matchId = String(nextMatchId++);
     matches.set(matchId, { players: [a, b], choices: {} });
-    send(a, { type: 'match_found', matchId, opponent: b });
-    send(b, { type: 'match_found', matchId, opponent: a });
+    send(a, { type: 'match_found', matchId, opponent: displayNameOf(b) });
+    send(b, { type: 'match_found', matchId, opponent: displayNameOf(a) });
   }
 }
 
@@ -228,8 +273,8 @@ function hostedRecipients(match) {
   return new Set([match.host, ...match.players, ...match.spectators]);
 }
 
-function buildHostedStatePayload(match, username) {
-  const role = username === match.host ? 'host' : (match.players.includes(username) ? 'player' : 'spectator');
+function buildHostedStatePayload(match, identity) {
+  const role = identity === match.host ? 'host' : (match.players.includes(identity) ? 'player' : 'spectator');
   return {
     type: 'hosted_state',
     matchId: match.code,
@@ -238,13 +283,13 @@ function buildHostedStatePayload(match, username) {
     targetScore: match.targetScore,
     stake: match.stake,
     role,
-    host: match.host,
+    hostName: displayNameOf(match.host),
     players: match.players.map((p) => ({
-      username: p,
+      id: p,
+      name: displayNameOf(p),
       score: match.scores[p],
       locked: Boolean(match.choices[p])
     })),
-    opponent: role === 'player' ? (opponentOf(match, username) || null) : null,
     lastRound: match.lastRound,
     winner: match.winner,
     abortedBy: match.abortedBy || null
@@ -252,22 +297,22 @@ function buildHostedStatePayload(match, username) {
 }
 
 function broadcastHostedState(match) {
-  for (const user of hostedRecipients(match)) {
-    send(user, buildHostedStatePayload(match, user));
+  for (const identity of hostedRecipients(match)) {
+    send(identity, buildHostedStatePayload(match, identity));
   }
 }
 
-function forfeitHostedMatch(match, leavingUsername) {
+function forfeitHostedMatch(match, leavingIdentity) {
   if (match.status === 'finished') return;
-  const remaining = opponentOf(match, leavingUsername);
+  const remaining = opponentOf(match, leavingIdentity);
   match.status = 'finished';
   match.winner = remaining || null;
-  match.abortedBy = leavingUsername;
+  match.abortedBy = leavingIdentity;
   match.choices = {};
   broadcastHostedState(match);
 }
 
-function handleMessage(username, raw) {
+function handleMessage(identity, raw) {
   let msg;
   try {
     msg = JSON.parse(raw);
@@ -276,29 +321,30 @@ function handleMessage(username, raw) {
   }
 
   if (msg.type === 'join_queue') {
-    if (queue.includes(username)) return;
+    if (isGuestIdentity(identity)) return;
+    if (queue.includes(identity)) return;
     for (const match of matches.values()) {
-      if (match.players.includes(username)) return;
+      if (match.players.includes(identity)) return;
     }
-    queue.push(username);
-    send(username, { type: 'queue_joined' });
+    queue.push(identity);
+    send(identity, { type: 'queue_joined' });
     tryMatchmake();
     return;
   }
 
   if (msg.type === 'leave_queue') {
-    removeFromQueue(username);
+    removeFromQueue(identity);
     return;
   }
 
   if (msg.type === 'choice') {
     const match = matches.get(msg.matchId);
-    if (!match || !match.players.includes(username)) return;
+    if (!match || !match.players.includes(identity)) return;
     if (!CHOICES.includes(msg.choice)) return;
-    if (match.choices[username]) return;
+    if (match.choices[identity]) return;
 
-    match.choices[username] = msg.choice;
-    const opponent = opponentOf(match, username);
+    match.choices[identity] = msg.choice;
+    const opponent = opponentOf(match, identity);
     send(opponent, { type: 'opponent_locked_in' });
 
     if (Object.keys(match.choices).length === 2) {
@@ -328,7 +374,7 @@ function handleMessage(username, raw) {
             matchId: msg.matchId,
             yourChoice: myChoice,
             opponentChoice: oppChoice,
-            opponent: opp,
+            opponent: displayNameOf(opp),
             result,
             stats
           });
@@ -342,32 +388,32 @@ function handleMessage(username, raw) {
 
   if (msg.type === 'leave_match') {
     const match = matches.get(msg.matchId);
-    if (!match || !match.players.includes(username)) return;
-    const opponent = opponentOf(match, username);
+    if (!match || !match.players.includes(identity)) return;
+    const opponent = opponentOf(match, identity);
     send(opponent, { type: 'opponent_left', matchId: msg.matchId });
     endMatch(msg.matchId);
     return;
   }
 
   if (msg.type === 'create_hosted_match') {
-    if (!isAdmin(username)) {
-      send(username, { type: 'hosted_error', message: 'Nur Admins können ein Spiel hosten.' });
+    if (!isAdmin(identity)) {
+      send(identity, { type: 'hosted_error', message: 'Nur Admins können ein Spiel hosten.' });
       return;
     }
     const targetScore = Number(msg.targetScore);
     if (!Number.isInteger(targetScore) || targetScore < 1 || targetScore > 50) {
-      send(username, { type: 'hosted_error', message: 'Ungültige Punktzahl (1-50).' });
+      send(identity, { type: 'hosted_error', message: 'Ungültige Punktzahl (1-50).' });
       return;
     }
     if (!isValidStake(msg.stake)) {
-      send(username, { type: 'hosted_error', message: 'Ungültiger Einsatz.' });
+      send(identity, { type: 'hosted_error', message: 'Ungültiger Einsatz.' });
       return;
     }
 
     const code = generateHostedCode();
     const match = {
       code,
-      host: username,
+      host: identity,
       targetScore,
       stake: sanitizeStake(msg.stake),
       players: [],
@@ -388,19 +434,19 @@ function handleMessage(username, raw) {
     const code = typeof msg.code === 'string' ? msg.code.trim().toUpperCase() : '';
     const match = hostedMatches.get(code);
     if (!match) {
-      send(username, { type: 'hosted_error', message: 'Code nicht gefunden.' });
+      send(identity, { type: 'hosted_error', message: 'Code nicht gefunden.' });
       return;
     }
 
-    if (username !== match.host && !match.players.includes(username)) {
+    if (identity !== match.host && !match.players.includes(identity)) {
       if (match.players.length < 2 && match.status !== 'finished') {
-        match.players.push(username);
-        match.scores[username] = 0;
+        match.players.push(identity);
+        match.scores[identity] = 0;
         if (match.players.length === 2) {
           match.status = 'ready';
         }
       } else {
-        match.spectators.add(username);
+        match.spectators.add(identity);
       }
     }
 
@@ -411,12 +457,12 @@ function handleMessage(username, raw) {
   if (msg.type === 'hosted_choice') {
     const match = hostedMatches.get(msg.matchId);
     if (!match) return;
-    if (!match.players.includes(username)) return;
+    if (!match.players.includes(identity)) return;
     if (match.status !== 'ready') return;
     if (!CHOICES.includes(msg.choice)) return;
-    if (match.choices[username]) return;
+    if (match.choices[identity]) return;
 
-    match.choices[username] = msg.choice;
+    match.choices[identity] = msg.choice;
 
     if (Object.keys(match.choices).length === 2) {
       match.status = 'countdown';
@@ -463,17 +509,17 @@ function handleMessage(username, raw) {
   if (msg.type === 'leave_hosted_match') {
     const match = hostedMatches.get(msg.matchId);
     if (!match) return;
-    if (match.players.includes(username)) {
-      forfeitHostedMatch(match, username);
+    if (match.players.includes(identity)) {
+      forfeitHostedMatch(match, identity);
     } else {
-      match.spectators.delete(username);
+      match.spectators.delete(identity);
     }
     return;
   }
 
   if (msg.type === 'close_hosted_match') {
     const match = hostedMatches.get(msg.matchId);
-    if (!match || match.host !== username) return;
+    if (!match || match.host !== identity) return;
     const recipients = hostedRecipients(match);
     hostedMatches.delete(match.code);
     for (const user of recipients) {
@@ -482,27 +528,27 @@ function handleMessage(username, raw) {
   }
 }
 
-function handleDisconnect(username) {
-  if (sockets.get(username) !== this) return;
-  sockets.delete(username);
-  removeFromQueue(username);
+function handleDisconnect(identity) {
+  if (sockets.get(identity) !== this) return;
+  sockets.delete(identity);
+  removeFromQueue(identity);
   for (const [matchId, match] of matches.entries()) {
-    if (match.players.includes(username)) {
-      const opponent = opponentOf(match, username);
+    if (match.players.includes(identity)) {
+      const opponent = opponentOf(match, identity);
       send(opponent, { type: 'opponent_left', matchId });
       endMatch(matchId);
     }
   }
   for (const match of hostedMatches.values()) {
-    if (match.players.includes(username)) {
-      forfeitHostedMatch(match, username);
+    if (match.players.includes(identity)) {
+      forfeitHostedMatch(match, identity);
     } else {
-      match.spectators.delete(username);
+      match.spectators.delete(identity);
     }
   }
 }
 
-function getUsernameFromRequest(req, callback) {
+function getIdentityFromRequest(req, callback) {
   const header = req.headers.cookie;
   if (!header) return callback(null);
   const cookies = parseCookie(header);
@@ -522,27 +568,27 @@ server.on('upgrade', (req, socket, head) => {
     socket.destroy();
     return;
   }
-  getUsernameFromRequest(req, (username) => {
-    if (!username) {
+  getIdentityFromRequest(req, (identity) => {
+    if (!identity) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req, username);
+      wss.emit('connection', ws, req, identity);
     });
   });
 });
 
-wss.on('connection', (ws, req, username) => {
-  const existing = sockets.get(username);
+wss.on('connection', (ws, req, identity) => {
+  const existing = sockets.get(identity);
   if (existing && existing !== ws) {
     existing.close();
   }
-  sockets.set(username, ws);
+  sockets.set(identity, ws);
 
-  ws.on('message', (raw) => handleMessage(username, raw));
-  ws.on('close', handleDisconnect.bind(ws, username));
+  ws.on('message', (raw) => handleMessage(identity, raw));
+  ws.on('close', handleDisconnect.bind(ws, identity));
 });
 
 server.listen(PORT, () => {
