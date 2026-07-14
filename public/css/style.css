@@ -1,3 +1,19 @@
+:root {
+  --bg-1: #150a1f;
+  --bg-2: #0a0510;
+  --panel: #1e1130;
+  --panel-border: #3a2255;
+  --purple: #8b3dff;
+  --purple-dark: #4c1d95;
+  --purple-light: #c084fc;
+  --red: #dc2626;
+  --red-dark: #7f1d1d;
+  --red-light: #f87171;
+  --text: #f3f4f6;
+  --text-muted: #a89bc2;
+  --black-outline: #000;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -6,8 +22,24 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: linear-gradient(135deg, #1f2937, #111827);
-  color: #f3f4f6;
+  background:
+    radial-gradient(circle at 20% -10%, rgba(139, 61, 255, 0.25), transparent 45%),
+    radial-gradient(circle at 90% 10%, rgba(220, 38, 38, 0.2), transparent 40%),
+    linear-gradient(160deg, var(--bg-1), var(--bg-2));
+  color: var(--text);
+}
+
+.logo {
+  display: block;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto 1.5rem;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.6));
+}
+
+.logo-game {
+  max-width: 260px;
+  margin-bottom: 1rem;
 }
 
 /* ---- Auth page ---- */
@@ -21,18 +53,13 @@ body {
 }
 
 .card {
-  background: #1f2937;
-  border-radius: 16px;
+  background: var(--panel);
+  border: 3px solid var(--black-outline);
+  border-radius: 14px;
   padding: 2rem;
   width: 100%;
   max-width: 380px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-}
-
-.card h1 {
-  text-align: center;
-  font-size: 1.4rem;
-  margin-bottom: 1.5rem;
+  box-shadow: 0 6px 0 var(--black-outline), 0 12px 30px rgba(0, 0, 0, 0.55);
 }
 
 .tabs {
@@ -40,22 +67,25 @@ body {
   margin-bottom: 1.5rem;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid #374151;
+  border: 2px solid var(--black-outline);
+  background: var(--bg-2);
 }
 
 .tab-btn {
   flex: 1;
-  padding: 0.6rem;
+  padding: 0.65rem;
   background: transparent;
-  color: #9ca3af;
+  color: var(--text-muted);
   border: none;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .tab-btn.active {
-  background: #2563eb;
+  background: linear-gradient(180deg, var(--purple-light), var(--purple) 60%, var(--purple-dark));
   color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
 .tab-panel {
@@ -70,37 +100,46 @@ body {
 
 label {
   font-size: 0.85rem;
-  color: #9ca3af;
+  color: var(--text-muted);
   margin-top: 0.5rem;
 }
 
 input {
   padding: 0.65rem 0.75rem;
   border-radius: 8px;
-  border: 1px solid #374151;
-  background: #111827;
-  color: #f3f4f6;
+  border: 2px solid var(--panel-border);
+  background: var(--bg-2);
+  color: var(--text);
   font-size: 1rem;
 }
 
 input:focus {
-  outline: 2px solid #2563eb;
+  outline: none;
+  border-color: var(--purple);
 }
 
 button[type="submit"] {
   margin-top: 1.25rem;
   padding: 0.7rem;
-  border: none;
-  border-radius: 8px;
-  background: #2563eb;
+  border: 2px solid var(--black-outline);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--red-light), var(--red) 55%, var(--red-dark));
   color: #fff;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   cursor: pointer;
+  box-shadow: 0 4px 0 var(--black-outline);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 
 button[type="submit"]:hover {
-  background: #1d4ed8;
+  filter: brightness(1.08);
+}
+
+button[type="submit"]:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--black-outline);
 }
 
 .message {
@@ -108,7 +147,7 @@ button[type="submit"]:hover {
   text-align: center;
   margin-top: 1rem;
   font-size: 0.9rem;
-  color: #f87171;
+  color: var(--red-light);
 }
 
 .message.success {
@@ -129,28 +168,32 @@ button[type="submit"]:hover {
   justify-content: space-between;
   align-items: center;
   font-size: 0.9rem;
-  color: #9ca3af;
+  color: var(--text-muted);
   margin-bottom: 1rem;
+}
+
+.topbar strong {
+  color: var(--purple-light);
 }
 
 .link-btn {
   background: none;
   border: none;
-  color: #60a5fa;
+  color: var(--purple-light);
   cursor: pointer;
   font-size: 0.9rem;
   text-decoration: underline;
 }
 
-.game-page h1 {
-  margin: 0.5rem 0 1.5rem;
-}
-
 .stats {
   display: flex;
   justify-content: center;
-  gap: 2rem;
+  gap: 1.5rem;
   margin-bottom: 2rem;
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+  border: 2px solid var(--black-outline);
+  border-radius: 12px;
 }
 
 .stats div {
@@ -160,11 +203,12 @@ button[type="submit"]:hover {
 
 .stats span {
   font-size: 1.6rem;
-  font-weight: 700;
+  font-weight: 800;
+  color: var(--purple-light);
 }
 
 .stats small {
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 
 .arena {
@@ -180,8 +224,9 @@ button[type="submit"]:hover {
 }
 
 .label {
-  color: #9ca3af;
+  color: var(--text-muted);
   margin-bottom: 0.5rem;
+  font-weight: 600;
 }
 
 .hand {
@@ -205,8 +250,9 @@ button[type="submit"]:hover {
 .center {
   font-size: 1.8rem;
   font-weight: 800;
-  color: #6b7280;
+  color: var(--red-light);
   width: 4rem;
+  text-shadow: 0 2px 0 var(--black-outline);
 }
 
 .result {
@@ -217,7 +263,7 @@ button[type="submit"]:hover {
 }
 
 .result.win { color: #4ade80; }
-.result.lose { color: #f87171; }
+.result.lose { color: var(--red-light); }
 .result.draw { color: #facc15; }
 
 .choices {
@@ -231,17 +277,25 @@ button[type="submit"]:hover {
   max-width: 140px;
   padding: 1rem 0.5rem;
   border-radius: 12px;
-  border: 2px solid #374151;
-  background: #1f2937;
-  color: #f3f4f6;
+  border: 3px solid var(--black-outline);
+  background: var(--panel);
+  color: var(--text);
   font-size: 1.1rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 4px 0 var(--black-outline);
+  transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease;
 }
 
 .choice-btn:hover:not(:disabled) {
-  border-color: #2563eb;
+  background: linear-gradient(180deg, var(--purple-light), var(--purple) 65%, var(--purple-dark));
   transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--black-outline);
+}
+
+.choice-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--black-outline);
 }
 
 .choice-btn:disabled {
@@ -265,19 +319,37 @@ button[type="submit"]:hover {
   max-width: 220px;
   padding: 1.5rem 1rem;
   border-radius: 12px;
-  border: 2px solid #374151;
-  background: #1f2937;
-  color: #f3f4f6;
+  border: 3px solid var(--black-outline);
+  background: var(--panel);
+  color: var(--text);
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.6;
   cursor: pointer;
-  transition: border-color 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 4px 0 var(--black-outline);
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease;
+}
+
+#mode-bot-btn {
+  border-color: var(--black-outline);
+}
+
+#mode-bot-btn:hover {
+  background: linear-gradient(180deg, var(--red-light), var(--red) 65%, var(--red-dark));
+}
+
+#mode-multiplayer-btn:hover {
+  background: linear-gradient(180deg, var(--purple-light), var(--purple) 65%, var(--purple-dark));
 }
 
 .mode-btn:hover {
-  border-color: #2563eb;
   transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--black-outline);
+}
+
+.mode-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--black-outline);
 }
 
 .waiting-panel {
@@ -291,8 +363,8 @@ button[type="submit"]:hover {
 .spinner {
   width: 2.5rem;
   height: 2.5rem;
-  border: 4px solid #374151;
-  border-top-color: #2563eb;
+  border: 4px solid var(--panel-border);
+  border-top-color: var(--purple);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -303,7 +375,7 @@ button[type="submit"]:hover {
 
 .opponent-status {
   min-height: 1.2rem;
-  color: #9ca3af;
+  color: var(--text-muted);
   font-size: 0.9rem;
   margin-bottom: 0.5rem;
 }
