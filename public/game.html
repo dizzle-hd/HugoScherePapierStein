@@ -21,26 +21,46 @@
       <div><span id="stat-losses">0</span><small>Niederlagen</small></div>
     </section>
 
-    <section class="arena">
-      <div class="player">
-        <p class="label">Du</p>
-        <div id="player-hand" class="hand">❔</div>
-      </div>
-
-      <div id="center-display" class="center">VS</div>
-
-      <div class="player">
-        <p class="label">Computer</p>
-        <div id="computer-hand" class="hand">❔</div>
-      </div>
+    <section id="mode-select" class="mode-select">
+      <button id="mode-bot-btn" class="mode-btn">🤖<br />Gegen Bot spielen</button>
+      <button id="mode-multiplayer-btn" class="mode-btn">🧑‍🤝‍🧑<br />Gegen Spieler spielen</button>
     </section>
 
-    <p id="result-text" class="result"></p>
+    <section id="waiting-panel" class="waiting-panel hidden">
+      <p>Suche Gegner…</p>
+      <div class="spinner"></div>
+      <button id="cancel-queue-btn" class="link-btn">Abbrechen</button>
+    </section>
 
-    <section class="choices">
-      <button class="choice-btn" data-choice="stein">🪨<br />Stein</button>
-      <button class="choice-btn" data-choice="papier">📄<br />Papier</button>
-      <button class="choice-btn" data-choice="schere">✂️<br />Schere</button>
+    <section id="game-section" class="hidden">
+      <p id="opponent-status" class="opponent-status"></p>
+
+      <section class="arena">
+        <div class="player">
+          <p class="label">Du</p>
+          <div id="player-hand" class="hand">❔</div>
+        </div>
+
+        <div id="center-display" class="center">VS</div>
+
+        <div class="player">
+          <p id="opponent-label" class="label">Bot</p>
+          <div id="computer-hand" class="hand">❔</div>
+        </div>
+      </section>
+
+      <p id="result-text" class="result"></p>
+
+      <section class="choices">
+        <button class="choice-btn" data-choice="stein">🪨<br />Stein</button>
+        <button class="choice-btn" data-choice="papier">📄<br />Papier</button>
+        <button class="choice-btn" data-choice="schere">✂️<br />Schere</button>
+      </section>
+
+      <div class="post-round-actions">
+        <button id="rematch-btn" class="link-btn hidden">Nächste Runde suchen</button>
+        <button id="back-to-menu-btn" class="link-btn">← Zurück zum Menü</button>
+      </div>
     </section>
   </main>
 
